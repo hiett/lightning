@@ -3,7 +3,6 @@ module github.com/hiett/lightning
 go 1.26.0
 
 require (
-	github.com/davecgh/go-spew v1.1.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/kylelemons/godebug v1.1.0
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/hiett/lightning/graphql"
 	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal"
@@ -166,7 +165,7 @@ func TestBasic(t *testing.T) {
 		{"value": 3, "valuePtr": 3, "__key": 3}
 	]
 }`)) {
-		t.Error("bad value", spew.Sdump(internal.AsJSON(result)))
+		t.Errorf("bad value: %s", internal.MarshalJSON(internal.AsJSON(result)))
 	}
 }
 
