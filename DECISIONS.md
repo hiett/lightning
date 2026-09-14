@@ -530,3 +530,55 @@ real code. Thirty-one survived. The ones that changed code:
   does the complete job before execution, so this is redundant rather than wrong.
 - Invalidation reruns fan out serially. It is a throughput characteristic of the
   reactive core, not a correctness problem.
+
+## D22. The Relay network layer applies diffs client-side and hands Relay whole payloads
+
+Phase 9.2. `PLAN.md` posed the design question and recommended starting with the simpler answer.
+Taken, and it stays: `js/src/network.ts` holds the accumulated payload for each live operation,
+applies each diff to it with `merge()`, and gives Relay a complete `GraphQLResponse` every time.
+
+The alternative — translating diffs directly into Relay store updates — would be faster, because
+Relay would re-normalise only what changed. It also means reimplementing the reordering and
+replacement semantics against the store's record API, where a mistake shows up as quietly wrong data
+rather than a failed test. Full payloads are correct by construction, and Relay's normalisation
+already skips writes for values that did not change. **Diff-to-store is noted as future work.**
+
+Three consequences worth knowing:
+
+- **`__key` is stripped** from what Relay is handed — it is the server's correlation token for
+  lining up array elements, not part of any selection set — but kept in the accumulated merge
+  state, because the next diff needs it. The strip is a deep copy, so a consumer cannot mutate the
+  live state either.
+- **A reconnect resets the accumulated payload.** The protocol has no session and no resume token,
+  so a reconnect re-subscribes from scratch and the next message is a complete snapshot. Applying a
+  snapshot to a stale accumulator would be merging against a state the server no longer has.
+- **Persisted queries are unsupported**, because the protocol carries query text. The network layer
+  says so rather than failing obscurely.
+
+`close()` is terminal: every subscription ends through `onError` and in-flight mutations reject,
+rather than being silently orphaned. Reconnect backoff escalates unless the previous connection
+lived at least ten seconds, so a server that accepts and immediately closes is backed off from
+rather than hammered.
+
+## D23. The Relay app is verified by running it, not by reading it
+
+`PLAN.md` §4 Phase 10 calls the example Relay app "the gate that proves the whole refactor". It is
+run as a test rather than described:
+
+- `example/web/e2e/app.test.tsx` mounts the **real components** — the ones relay-compiler compiled
+  against the exported `schema.graphql` — in jsdom, points them at a running example server over the
+  live-query websocket, and drives them. Nothing is mocked.
+- It covers all four acceptance behaviours: `usePaginationFragment` renders a page and loads
+  another, an interface resolves to its concrete types, `@refetchable` fetches a node by its global
+  id, a mutation commits and `@appendNode` splices the result into the connection without a
+  refetch, and a live query is pushed a change made over a *different* connection.
+- CI regenerates `schema.graphql` from the Go schema and re-runs relay-compiler, failing if either
+  the exported schema or the generated artifacts are out of date. A schema change that was never
+  exported cannot pass.
+
+The end-to-end test needs a running server, so it is a separate `npm run e2e` rather than part of
+`npm test`; CI runs relay-compiler and the typecheck, which need no server.
+
+Building it turned up one real gap in the example: `@appendNode` needs the connection's Relay id,
+and `__id` has to be selected explicitly on a `@connection` field to get it. Without it the add
+button silently did nothing.

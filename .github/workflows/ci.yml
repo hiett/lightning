@@ -45,3 +45,71 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
+
+  js:
+    name: relay network layer
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: js
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+
+      - run: npm ci
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: test
+        run: npm test
+
+      - name: build
+        run: npm run build
+
+  relay:
+    name: relay-compiler against the exported schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: example/web/package-lock.json
+
+      # The schema file a client compiles against is generated from the Go
+      # schema. Regenerating it here is what catches a schema change that was
+      # never exported.
+      - name: export schema.graphql
+        working-directory: example
+        run: go run ./cmd/schema -out schema.graphql
+
+      - name: the exported schema is up to date
+        run: git diff --exit-code -- example/schema.graphql
+
+      - name: install
+        working-directory: example/web
+        run: npm ci
+
+      - name: relay-compiler
+        working-directory: example/web
+        run: npx relay-compiler
+
+      - name: the generated artifacts are up to date
+        run: git diff --exit-code -- example/web/src/__generated__
+
+      - name: typecheck
+        working-directory: example/web
+        run: npm run typecheck
