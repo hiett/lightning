@@ -625,14 +625,20 @@ func Flatten(selectionSet *SelectionSet, typ *Object) ([]*Selection, error) {
 			merged.Fragments = append(merged.Fragments, selection.SelectionSet.Fragments...)
 		}
 
-		flattened = append(flattened, &Selection{
+		merge := &Selection{
 			Name:         selections[0].Name,
 			Alias:        selections[0].Alias,
 			ParentType:   selections[0].ParentType,
 			UnparsedArgs: selections[0].UnparsedArgs,
 			Args:         selections[0].Args,
 			SelectionSet: merged,
-		})
+		}
+		// Per-type arguments travel with the merged selection; without them an
+		// interface field selected twice would fall back to Args.
+		for typeName, args := range selections[0].argsByParentType {
+			merge.SetArgsForType(typeName, args)
+		}
+		flattened = append(flattened, merge)
 	}
 
 	return flattened, nil

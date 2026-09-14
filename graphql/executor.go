@@ -200,6 +200,22 @@ func PrepareQuery(ctx context.Context, typ Type, selectionSet *SelectionSet) err
 				return NewClientError(`unknown field "%s"`, selection.Name)
 			}
 
+			// Arguments are parsed once per implementing type, not once
+			// overall: each implementation has its own Go argument struct, and
+			// the interface's declaration only guarantees they agree about the
+			// GraphQL shape.
+			for name, object := range typ.PossibleTypes {
+				implementation, ok := object.Fields[selection.Name]
+				if !ok {
+					return NewClientError(`type "%s" does not implement interface field "%s"`, name, selection.Name)
+				}
+				parsed, err := implementation.ParseArguments(selection.UnparsedArgs)
+				if err != nil {
+					return NewClientError(`error parsing args for "%s": %s`, selection.Name, err)
+				}
+				selection.SetArgsForType(name, parsed)
+			}
+
 			if !selection.parsed {
 				selection.parsed = true
 				parsed, err := field.ParseArguments(selection.UnparsedArgs)

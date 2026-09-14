@@ -294,6 +294,32 @@ type Selection struct {
 
 	// ParentType is the type that this field hangs off of.
 	ParentType string
+
+	// argsByParentType holds arguments parsed against a particular object type.
+	//
+	// A selection made directly on an interface is resolved against every type
+	// that implements it, and each implementation parses arguments into its own
+	// Go struct. Args alone cannot express that: it would hold whichever
+	// implementation happened to be prepared first, and handing those to a
+	// different implementation's resolver is a type error.
+	argsByParentType map[string]interface{}
+}
+
+// SetArgsForType records arguments parsed against a specific object type.
+func (s *Selection) SetArgsForType(typeName string, args interface{}) {
+	if s.argsByParentType == nil {
+		s.argsByParentType = make(map[string]interface{}, 2)
+	}
+	s.argsByParentType[typeName] = args
+}
+
+// ArgsForType returns the arguments to pass to typeName's resolver, falling
+// back to Args for a selection that was only ever prepared against one type.
+func (s *Selection) ArgsForType(typeName string) interface{} {
+	if args, ok := s.argsByParentType[typeName]; ok {
+		return args
+	}
+	return s.Args
 }
 
 // A Fragment represents a reusable part of a GraphQL query

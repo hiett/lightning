@@ -23,6 +23,16 @@ type WorkUnit struct {
 	objectName   string
 }
 
+// args returns the parsed arguments to hand this unit's resolver.
+//
+// It asks the selection for the arguments belonging to the concrete type being
+// resolved rather than reading Selection.Args, because a selection made on an
+// interface is resolved against every implementing type and each parses the
+// arguments into its own Go struct.
+func (w *WorkUnit) args() interface{} {
+	return w.selection.ArgsForType(w.objectName)
+}
+
 type nonExpensive struct{}
 
 func CheckNonExpensive(ctx context.Context) bool {
@@ -198,7 +208,7 @@ func executeWorkUnit(unit *WorkUnit) []*WorkUnit {
 }
 
 func executeBatchWorkUnit(unit *WorkUnit) []*WorkUnit {
-	results, err := SafeExecuteBatchResolver(unit.Ctx, unit.field, unit.sources, unit.selection.Args, unit.selection.SelectionSet)
+	results, err := SafeExecuteBatchResolver(unit.Ctx, unit.field, unit.sources, unit.args(), unit.selection.SelectionSet)
 	if err != nil {
 		for _, dest := range unit.destinations {
 			dest.Fail(err)
@@ -225,7 +235,7 @@ func executeNonExpensiveWorkUnit(unit *WorkUnit) []*WorkUnit {
 		if unit.objectName != "Mutation" {
 			ctx = context.WithValue(unit.Ctx, nonExpensive{}, struct{}{})
 		}
-		fieldResult, err := SafeExecuteResolver(ctx, unit.field, src, unit.selection.Args, unit.selection.SelectionSet)
+		fieldResult, err := SafeExecuteResolver(ctx, unit.field, src, unit.args(), unit.selection.SelectionSet)
 		if err != nil {
 			// Fail the unit and exit.
 			unit.destinations[idx].Fail(err)
@@ -280,7 +290,7 @@ func getWorkCacheKey(src interface{}, field *Field, selection *Selection) resolv
 
 // executeNonBatchWorkUnit resolves a non-batch field in our graphql response graph.
 func executeNonBatchWorkUnit(ctx context.Context, src interface{}, dest *outputNode, unit *WorkUnit) []*WorkUnit {
-	fieldResult, err := SafeExecuteResolver(ctx, unit.field, src, unit.selection.Args, unit.selection.SelectionSet)
+	fieldResult, err := SafeExecuteResolver(ctx, unit.field, src, unit.args(), unit.selection.SelectionSet)
 	if err != nil {
 		dest.Fail(err)
 		return nil

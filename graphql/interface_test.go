@@ -2,6 +2,7 @@ package graphql_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/hiett/lightning/graphql"
@@ -215,4 +216,50 @@ func TestInterfaceValidation(t *testing.T) {
 
 	_, err = v.Parse(`{ feed { ... on Query { feed { id } } } }`, nil, "")
 	require.Error(t, err, "a fragment on an unrelated type cannot be spread here")
+}
+
+// ShoutA and ShoutB implement one interface field with different Go argument
+// structs, which is what the schema builder cannot detect and the executor has
+// to cope with.
+type ShoutA struct{ Name string }
+type ShoutB struct{ Name string }
+
+type ShoutArgsA struct{ Times int32 }
+type ShoutArgsB struct{ Times int32 }
+
+// Shouty is an interface whose one field takes arguments.
+type Shouty struct {
+	schemabuilder.Interface
+
+	*ShoutA
+	*ShoutB
+}
+
+// TestInterfaceFieldArgumentsArePerImplementation checks that a field selected
+// directly on an interface hands each implementation the arguments *it* parsed.
+//
+// Implementations agree about a field's GraphQL signature — the schema builder
+// enforces that — but nothing makes them share a Go argument struct. Parsing
+// once and reusing the result fed one implementation's struct to another's
+// resolver, which is a type error.
+func TestInterfaceFieldArgumentsArePerImplementation(t *testing.T) {
+	schema := schemabuilder.NewSchema()
+	schema.Interface("Shouty", Shouty{}).Fields("shout")
+
+	a := schema.Object("ShoutA", ShoutA{})
+	a.FieldFunc("shout", func(v *ShoutA, args ShoutArgsA) string {
+		return fmt.Sprintf("A%d", args.Times)
+	})
+
+	b := schema.Object("ShoutB", ShoutB{})
+	b.FieldFunc("shout", func(v *ShoutB, args ShoutArgsB) string {
+		return fmt.Sprintf("B%d", args.Times)
+	})
+
+	schema.Query().FieldFunc("both", func() []*Shouty {
+		return []*Shouty{{ShoutA: &ShoutA{}}, {ShoutB: &ShoutB{}}}
+	})
+
+	got := runInterfaceQuery(t, schema.MustBuild(), `{ both { shout(times: 3) } }`)
+	require.Equal(t, internal.ParseJSON(`{"both": [{"shout": "A3"}, {"shout": "B3"}]}`), got)
 }
