@@ -53,3 +53,22 @@ who needs an air-gapped IDE can serve their own page against the same endpoint.
 Phase 2. Thirteen files carried pre-Go-1.19 doc comment indentation. The whole tree was
 reformatted once, and `.github/workflows/ci.yml` fails on `gofmt -l`, `go vet`, `go test`,
 `go test -race`, and a dirty `go mod tidy`.
+
+## D7. `PLAN.md` Trap 1 is stale: there is only ONE executor
+
+`PLAN.md` §3 Trap 1 warns that "There are TWO executors" — `graphql/executor.go` (238 LOC) and
+`graphql/batch_executor.go` (563 LOC) — and that every type-system change must land in both.
+
+**This is not true of this tree.** Upstream commit `1de8d7d` ("clean out non-batch executor",
+June 2019) deleted the non-batch executor. `graphql/executor.go` retains only shared helpers —
+`pathError`, `PrepareQuery`, `SafeExecuteResolver`, `SafeExecuteBatchResolver` and the
+`ExecutorRunner` interface. The single implementation of `ExecutorRunner` is `*graphql.Executor`
+in `graphql/batch_executor.go`. `internal/testgraphql.GetExecutors()` returns exactly one entry,
+`"batchExecutor:"`, and its multi-executor comparison loop is now vestigial.
+
+The line count in the plan matches (`executor.go` really is 238 lines) because the file still
+exists — it just no longer contains an executor.
+
+Consequence: the Phase 4 and Phase 5 acceptance criteria that say "under **both** executors" are
+satisfied by the one executor that exists. New tests still go through `internal/testgraphql` so
+they would automatically cover a second executor if one were ever reintroduced.
