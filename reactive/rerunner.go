@@ -183,8 +183,10 @@ func WithDependencySetForSelection(ctx context.Context) context.Context {
 }
 
 func DependenciesForSelection(ctx context.Context) []Dependency {
-	depSet := ctx.Value(dependencySetForSelectionKey{}).(*dependencySet)
-	if depSet == nil {
+	// The comma-ok form matters: outside a selection-scoped context the value
+	// is absent, and a bare assertion would panic rather than report nothing.
+	depSet, ok := ctx.Value(dependencySetForSelectionKey{}).(*dependencySet)
+	if !ok || depSet == nil {
 		return nil
 	}
 
@@ -227,9 +229,11 @@ func WithDependencyCallback(ctx context.Context, f DependencyCallbackFunc) conte
 	return context.WithValue(ctx, dependencyCallbackKey{}, f)
 }
 
+// Dependencies reports the serialisable dependency keys the computation
+// running in ctx has recorded so far. Outside a computation it reports nothing.
 func Dependencies(ctx context.Context) []Dependency {
-	depSet := ctx.Value(dependencySetKey{}).(*dependencySet)
-	if depSet == nil {
+	depSet, ok := ctx.Value(dependencySetKey{}).(*dependencySet)
+	if !ok || depSet == nil {
 		return nil
 	}
 	return depSet.get()
