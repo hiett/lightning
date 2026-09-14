@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/hiett/lightning/graphql"
@@ -298,7 +300,7 @@ func (sb *schemaBuilder) makeTextUnmarshalerParser(typ reflect.Type) (*argParser
 			return unmarshalable.UnmarshalText([]byte(asString))
 		},
 		Type: typ,
-	}, &graphql.Scalar{Type: "string"}, nil
+	}, newScalar(ScalarString), nil
 }
 
 // makeSliceParser creates an arg parser for a slice field.
@@ -347,7 +349,7 @@ func getScalarArgParser(typ reflect.Type) (*argParser, graphql.Type, bool) {
 				argParser = &newParser
 			}
 
-			return argParser, &graphql.Scalar{Type: name}, true
+			return argParser, newScalar(name), true
 		}
 	}
 	return nil, nil, false
@@ -388,11 +390,11 @@ var scalarArgParsers = map[reflect.Type]*argParser{
 	},
 	reflect.TypeOf(int64(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseInt64Arg(value)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(int64(asFloat)).Convert(dest.Type()))
+			dest.Set(reflect.ValueOf(parsed).Convert(dest.Type()))
 			return nil
 		},
 	},
@@ -428,31 +430,34 @@ var scalarArgParsers = map[reflect.Type]*argParser{
 	},
 	reflect.TypeOf(int(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseInt64Arg(value)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(int(asFloat)).Convert(dest.Type()))
+			dest.Set(reflect.ValueOf(int(parsed)).Convert(dest.Type()))
 			return nil
 		},
 	},
 	reflect.TypeOf(uint64(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseUint64Arg(value)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(int64(asFloat)).Convert(dest.Type()))
+			dest.Set(reflect.ValueOf(parsed).Convert(dest.Type()))
 			return nil
 		},
 	},
 	reflect.TypeOf(uint32(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseUint64Arg(value)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(uint32(asFloat)).Convert(dest.Type()))
+			if parsed > math.MaxUint32 {
+				return fmt.Errorf("%d overflows a 32-bit unsigned integer", parsed)
+			}
+			dest.Set(reflect.ValueOf(uint32(parsed)).Convert(dest.Type()))
 			return nil
 		},
 	},
@@ -478,11 +483,11 @@ var scalarArgParsers = map[reflect.Type]*argParser{
 	},
 	reflect.TypeOf(uint(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseUint64Arg(value)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(uint(asFloat)).Convert(dest.Type()))
+			dest.Set(reflect.ValueOf(uint(parsed)).Convert(dest.Type()))
 			return nil
 		},
 	},
@@ -494,6 +499,25 @@ var scalarArgParsers = map[reflect.Type]*argParser{
 			}
 			dest.Set(reflect.ValueOf(asString).Convert(dest.Type()))
 			return nil
+		},
+	},
+	reflect.TypeOf(ID{}): {
+		FromJSON: func(value interface{}, dest reflect.Value) error {
+			// The specification says an ID input may arrive as a string or as
+			// an integer, and that both are the same identifier.
+			switch value := value.(type) {
+			case string:
+				dest.Set(reflect.ValueOf(ID{Value: value}).Convert(dest.Type()))
+				return nil
+			case float64:
+				if value != math.Trunc(value) {
+					return errors.New("not a valid ID")
+				}
+				dest.Set(reflect.ValueOf(ID{Value: strconv.FormatInt(int64(value), 10)}).Convert(dest.Type()))
+				return nil
+			default:
+				return errors.New("not a valid ID")
+			}
 		},
 	},
 	reflect.TypeOf([]byte{}): {

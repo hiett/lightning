@@ -363,21 +363,21 @@ func TestArgumentOptionality(t *testing.T) {
 
 	// An optional argument that is passed in returns successfully.
 	verifyArgumentOption(t, builtSchema.Query, `
-		query getOptional($testArg: int64) {
+		query getOptional($testArg: Int64) {
 			optional(x: $testArg)
-		}`, filledVariables, `{"optional": 5}`)
+		}`, filledVariables, `{"optional": "5"}`)
 
 	// An optional argument that is omitted returns successfully.
 	verifyArgumentOption(t, builtSchema.Query, `
-			query getOptional($testArg: int64) {
+			query getOptional($testArg: Int64) {
 				optional(x: $testArg)
-			}`, emptyVariables, `{"optional": -1}`)
+			}`, emptyVariables, `{"optional": "-1"}`)
 
 	// A mandatory argument that is passed in returns successfully.
 	verifyArgumentOption(t, builtSchema.Query, `
-		query getMandatory($testArg: int64!) {
+		query getMandatory($testArg: Int64!) {
 			mandatory(x: $testArg)
-		}`, filledVariables, `{"mandatory": 5}`)
+		}`, filledVariables, `{"mandatory": "5"}`)
 }
 
 // TestConcurrencyLimiterDeadlock tests that the executor does not cause a

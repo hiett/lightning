@@ -79,7 +79,7 @@ func TestUnionType(t *testing.T) {
 	}
 
 	if d := pretty.Compare(internal.AsJSON(result), internal.ParseJSON(`
-		{"vehicle": { "name": "a", "speed": 50, "__typename": "Vehicle" }, "asset": { "name": "b", "batteryLevel": 5, "__typename": "Asset" }}`)); d != "" {
+		{"vehicle": { "name": "a", "speed": "50", "__typename": "Vehicle" }, "asset": { "name": "b", "batteryLevel": "5", "__typename": "Asset" }}`)); d != "" {
 		t.Errorf("expected did not match result: %s", d)
 	}
 }

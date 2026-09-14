@@ -198,23 +198,23 @@ func TestDirectivesWithVariables(t *testing.T) {
 	assert.Equal(t, map[string]interface{}{
 		"items": []interface{}{
 			map[string]interface{}{
-				"__key": int64(1),
+				"__key": "1",
 				"name":  "1",
 			},
 			map[string]interface{}{
-				"__key": int64(2),
+				"__key": "2",
 				"name":  "2",
 			},
 			map[string]interface{}{
-				"__key": int64(3),
+				"__key": "3",
 				"name":  "3",
 			},
 			map[string]interface{}{
-				"__key": int64(4),
+				"__key": "4",
 				"name":  "4",
 			},
 			map[string]interface{}{
-				"__key": int64(5),
+				"__key": "5",
 				"name":  "5",
 			},
 		},

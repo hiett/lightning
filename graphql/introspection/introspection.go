@@ -100,7 +100,7 @@ var IncludeDirective = Directive{
 	Args: []InputValue{
 		InputValue{
 			Name:        "if",
-			Type:        Type{Inner: &graphql.NonNull{Type: &graphql.Scalar{Type: "bool"}}},
+			Type:        Type{Inner: &graphql.NonNull{Type: &graphql.Scalar{Type: "Boolean"}}},
 			Description: "Included when true.",
 		},
 	},
@@ -117,7 +117,7 @@ var SkipDirective = Directive{
 	Args: []InputValue{
 		InputValue{
 			Name:        "if",
-			Type:        Type{Inner: &graphql.NonNull{Type: &graphql.Scalar{Type: "bool"}}},
+			Type:        Type{Inner: &graphql.NonNull{Type: &graphql.Scalar{Type: "Boolean"}}},
 			Description: "Skipped when true.",
 		},
 	},

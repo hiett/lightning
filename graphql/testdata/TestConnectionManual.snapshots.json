@@ -9,22 +9,22 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1
+                  "__key": "1",
+                  "id": "1"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
-                  "id": 2
+                  "__key": "2",
+                  "id": "2"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3
+                  "__key": "3",
+                  "id": "3"
                 }
               }
             ],
@@ -38,7 +38,7 @@
               ],
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }
@@ -54,22 +54,22 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1
+                  "__key": "1",
+                  "id": "1"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
-                  "id": 2
+                  "__key": "2",
+                  "id": "2"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3
+                  "__key": "3",
+                  "id": "3"
                 }
               }
             ],
@@ -80,7 +80,7 @@
               "pages": [],
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }
@@ -96,22 +96,22 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1
+                  "__key": "1",
+                  "id": "1"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
-                  "id": 2
+                  "__key": "2",
+                  "id": "2"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3
+                  "__key": "3",
+                  "id": "3"
                 }
               }
             ],
@@ -125,7 +125,7 @@
               ],
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }
@@ -141,8 +141,8 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1
+                  "__key": "1",
+                  "id": "1"
                 }
               }
             ],
@@ -155,7 +155,7 @@
               ],
               "startCursor": "MQ=="
             },
-            "totalCount": 1
+            "totalCount": "1"
           }
         }
       }
@@ -171,22 +171,22 @@
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
-                  "id": 5
+                  "__key": "5",
+                  "id": "5"
                 }
               },
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
-                  "id": 4
+                  "__key": "4",
+                  "id": "4"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3
+                  "__key": "3",
+                  "id": "3"
                 }
               }
             ],
@@ -200,7 +200,7 @@
               ],
               "startCursor": "NQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }
@@ -216,22 +216,22 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1
+                  "__key": "1",
+                  "id": "1"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
-                  "id": 2
+                  "__key": "2",
+                  "id": "2"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3
+                  "__key": "3",
+                  "id": "3"
                 }
               }
             ],
@@ -242,7 +242,7 @@
               "pages": [],
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }

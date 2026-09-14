@@ -32,7 +32,7 @@ func testHTTPRequest(req *http.Request) *httptest.ResponseRecorder {
 // postQuery is the happy-path request body used by several tests. The variable
 // is declared non-null because mirror's value argument is non-null, and the
 // validator rejects a nullable variable in a non-null position.
-const postQuery = `{"query": "query TestQuery($value: int64!) { mirror(value: $value) }", "variables": { "value": 1 }}`
+const postQuery = `{"query": "query TestQuery($value: Int64!) { mirror(value: $value) }", "variables": { "value": 1 }}`
 
 func assertBody(t *testing.T, rr *httptest.ResponseRecorder, want string) {
 	t.Helper()
@@ -78,7 +78,7 @@ func TestHTTPSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertBody(t, testHTTPRequest(req), `{"data":{"mirror":-1}}`)
+	assertBody(t, testHTTPRequest(req), `{"data":{"mirror":"-1"}}`)
 }
 
 func TestHTTPContentType(t *testing.T) {
@@ -102,7 +102,7 @@ func TestHTTPContentType(t *testing.T) {
 // the one operationName names. Relay always sends operationName.
 func TestHTTPOperationName(t *testing.T) {
 	body := `{
-		"query": "query First($value: int64!) { mirror(value: $value) } query Second($value: int64!) { doubled: mirror(value: $value) }",
+		"query": "query First($value: Int64!) { mirror(value: $value) } query Second($value: Int64!) { doubled: mirror(value: $value) }",
 		"operationName": "Second",
 		"variables": {"value": 3}
 	}`
@@ -112,7 +112,7 @@ func TestHTTPOperationName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertBody(t, testHTTPRequest(req), `{"data":{"doubled":-3}}`)
+	assertBody(t, testHTTPRequest(req), `{"data":{"doubled":"-3"}}`)
 }
 
 // TestHTTPAmbiguousOperation checks that a multi-operation document with no
@@ -154,7 +154,7 @@ func TestHTTPValidationRejectsUnknownField(t *testing.T) {
 // TestHTTPValidationRejectsBadVariableType checks the validator catches a
 // nullable variable used where the schema requires a non-null value.
 func TestHTTPValidationRejectsBadVariableType(t *testing.T) {
-	body := `{"query": "query TestQuery($value: int64) { mirror(value: $value) }", "variables": {"value": 1}}`
+	body := `{"query": "query TestQuery($value: Int64) { mirror(value: $value) }", "variables": {"value": 1}}`
 
 	req, err := http.NewRequest("POST", "/graphql", strings.NewReader(body))
 	if err != nil {
@@ -162,7 +162,7 @@ func TestHTTPValidationRejectsBadVariableType(t *testing.T) {
 	}
 
 	got := testHTTPRequest(req).Body.String()
-	if !strings.Contains(got, `used in position expecting type \"int64!\"`) {
+	if !strings.Contains(got, `used in position expecting type \"Int64!\"`) {
 		t.Errorf("expected a variable type validation error, got %s", got)
 	}
 }

@@ -9,8 +9,8 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1
+                  "__key": "1",
+                  "id": "1"
                 }
               }
             ],
@@ -20,7 +20,7 @@
               "hasPrevPage": false,
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }
@@ -36,15 +36,15 @@
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
-                  "id": 4
+                  "__key": "4",
+                  "id": "4"
                 }
               },
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
-                  "id": 5
+                  "__key": "5",
+                  "id": "5"
                 }
               }
             ],
@@ -59,7 +59,7 @@
               ],
               "startCursor": "NA=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }
@@ -75,36 +75,36 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1
+                  "__key": "1",
+                  "id": "1"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
-                  "id": 2
+                  "__key": "2",
+                  "id": "2"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3
+                  "__key": "3",
+                  "id": "3"
                 }
               },
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
-                  "id": 4
+                  "__key": "4",
+                  "id": "4"
                 }
               },
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
-                  "id": 5
+                  "__key": "5",
+                  "id": "5"
                 }
               }
             ],
@@ -117,7 +117,7 @@
               ],
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }
@@ -133,8 +133,8 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1
+                  "__key": "1",
+                  "id": "1"
                 }
               }
             ],
@@ -144,7 +144,7 @@
               "hasPrevPage": false,
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }
@@ -160,8 +160,8 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1
+                  "__key": "1",
+                  "id": "1"
                 }
               }
             ],
@@ -171,7 +171,7 @@
               "hasPrevPage": false,
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }
@@ -211,9 +211,9 @@
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
+                  "__key": "4",
                   "filterText": "soban",
-                  "id": 4
+                  "id": "4"
                 }
               }
             ],
@@ -226,32 +226,32 @@
               ],
               "startCursor": "NA=="
             },
-            "totalCount": 1
+            "totalCount": "1"
           },
           "filterByCan": {
             "edges": [
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
+                  "__key": "1",
                   "filterText": "can",
-                  "id": 1
+                  "id": "1"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
+                  "__key": "3",
                   "filterText": "cannot",
-                  "id": 3
+                  "id": "3"
                 }
               },
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
+                  "__key": "5",
                   "filterText": "socan",
-                  "id": 5
+                  "id": "5"
                 }
               }
             ],
@@ -264,32 +264,32 @@
               ],
               "startCursor": "MQ=="
             },
-            "totalCount": 3
+            "totalCount": "3"
           },
           "filterByCanAndCustomFilter": {
             "edges": [
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
+                  "__key": "1",
                   "filterText": "can",
-                  "id": 1
+                  "id": "1"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
+                  "__key": "3",
                   "filterText": "cannot",
-                  "id": 3
+                  "id": "3"
                 }
               },
               {
                 "cursor": "Ng==",
                 "node": {
-                  "__key": 6,
+                  "__key": "6",
                   "filterText": "crane",
-                  "id": 6
+                  "id": "6"
                 }
               }
             ],
@@ -302,7 +302,7 @@
               ],
               "startCursor": "MQ=="
             },
-            "totalCount": 3
+            "totalCount": "3"
           },
           "filterByCanAndNonExistentFilterFunc": {
             "edges": [],
@@ -313,7 +313,7 @@
               "pages": [],
               "startCursor": ""
             },
-            "totalCount": 0
+            "totalCount": "0"
           }
         }
       }
@@ -329,41 +329,41 @@
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
+                  "__key": "1",
                   "float": 1,
-                  "id": 1
+                  "id": "1"
                 }
               },
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
+                  "__key": "4",
                   "float": 2,
-                  "id": 4
+                  "id": "4"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
+                  "__key": "2",
                   "float": 3,
-                  "id": 2
+                  "id": "2"
                 }
               },
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
+                  "__key": "5",
                   "float": 4,
-                  "id": 5
+                  "id": "5"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
+                  "__key": "3",
                   "float": 5,
-                  "id": 3
+                  "id": "3"
                 }
               }
             ],
@@ -376,48 +376,48 @@
               ],
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           },
           "floatsDesc": {
             "edges": [
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
+                  "__key": "3",
                   "float": 5,
-                  "id": 3
+                  "id": "3"
                 }
               },
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
+                  "__key": "5",
                   "float": 4,
-                  "id": 5
+                  "id": "5"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
+                  "__key": "2",
                   "float": 3,
-                  "id": 2
+                  "id": "2"
                 }
               },
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
+                  "__key": "4",
                   "float": 2,
-                  "id": 4
+                  "id": "4"
                 }
               },
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
+                  "__key": "1",
                   "float": 1,
-                  "id": 1
+                  "id": "1"
                 }
               }
             ],
@@ -430,48 +430,48 @@
               ],
               "startCursor": "Mw=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           },
           "numbersAsc": {
             "edges": [
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1,
-                  "number": 1
+                  "__key": "1",
+                  "id": "1",
+                  "number": "1"
                 }
               },
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
-                  "id": 4,
-                  "number": 2
+                  "__key": "4",
+                  "id": "4",
+                  "number": "2"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
-                  "id": 2,
-                  "number": 3
+                  "__key": "2",
+                  "id": "2",
+                  "number": "3"
                 }
               },
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
-                  "id": 5,
-                  "number": 4
+                  "__key": "5",
+                  "id": "5",
+                  "number": "4"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3,
-                  "number": 5
+                  "__key": "3",
+                  "id": "3",
+                  "number": "5"
                 }
               }
             ],
@@ -484,48 +484,48 @@
               ],
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           },
           "numbersDesc": {
             "edges": [
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3,
-                  "number": 5
+                  "__key": "3",
+                  "id": "3",
+                  "number": "5"
                 }
               },
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
-                  "id": 5,
-                  "number": 4
+                  "__key": "5",
+                  "id": "5",
+                  "number": "4"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
-                  "id": 2,
-                  "number": 3
+                  "__key": "2",
+                  "id": "2",
+                  "number": "3"
                 }
               },
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
-                  "id": 4,
-                  "number": 2
+                  "__key": "4",
+                  "id": "4",
+                  "number": "2"
                 }
               },
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1,
-                  "number": 1
+                  "__key": "1",
+                  "id": "1",
+                  "number": "1"
                 }
               }
             ],
@@ -538,47 +538,47 @@
               ],
               "startCursor": "Mw=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           },
           "stringsAsc": {
             "edges": [
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1,
+                  "__key": "1",
+                  "id": "1",
                   "string": "1"
                 }
               },
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
-                  "id": 4,
+                  "__key": "4",
+                  "id": "4",
                   "string": "2"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
-                  "id": 2,
+                  "__key": "2",
+                  "id": "2",
                   "string": "3"
                 }
               },
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
-                  "id": 5,
+                  "__key": "5",
+                  "id": "5",
                   "string": "4"
                 }
               },
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3,
+                  "__key": "3",
+                  "id": "3",
                   "string": "5"
                 }
               }
@@ -592,47 +592,47 @@
               ],
               "startCursor": "MQ=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           },
           "stringsDesc": {
             "edges": [
               {
                 "cursor": "Mw==",
                 "node": {
-                  "__key": 3,
-                  "id": 3,
+                  "__key": "3",
+                  "id": "3",
                   "string": "5"
                 }
               },
               {
                 "cursor": "NQ==",
                 "node": {
-                  "__key": 5,
-                  "id": 5,
+                  "__key": "5",
+                  "id": "5",
                   "string": "4"
                 }
               },
               {
                 "cursor": "Mg==",
                 "node": {
-                  "__key": 2,
-                  "id": 2,
+                  "__key": "2",
+                  "id": "2",
                   "string": "3"
                 }
               },
               {
                 "cursor": "NA==",
                 "node": {
-                  "__key": 4,
-                  "id": 4,
+                  "__key": "4",
+                  "id": "4",
                   "string": "2"
                 }
               },
               {
                 "cursor": "MQ==",
                 "node": {
-                  "__key": 1,
-                  "id": 1,
+                  "__key": "1",
+                  "id": "1",
                   "string": "1"
                 }
               }
@@ -646,7 +646,7 @@
               ],
               "startCursor": "Mw=="
             },
-            "totalCount": 5
+            "totalCount": "5"
           }
         }
       }

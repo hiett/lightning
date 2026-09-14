@@ -806,40 +806,40 @@ func TestEmbeddedArgs(t *testing.T) {
 	assert.Equal(t, map[string]interface{}{
 		"inner": map[string]interface{}{
 			"innerConnection": map[string]interface{}{
-				"totalCount": float64(5),
+				"totalCount": "5",
 				"edges": []interface{}{
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(1),
-							"id":    float64(1),
+							"__key": "1",
+							"id":    "1",
 						},
 						"cursor": "MQ==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(2),
-							"id":    float64(2),
+							"__key": "2",
+							"id":    "2",
 						},
 						"cursor": "Mg==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(3),
-							"id":    float64(3),
+							"__key": "3",
+							"id":    "3",
 						},
 						"cursor": "Mw==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(4),
-							"id":    float64(4),
+							"__key": "4",
+							"id":    "4",
 						},
 						"cursor": "NA==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(5),
-							"id":    float64(5),
+							"__key": "5",
+							"id":    "5",
 						},
 						"cursor": "NQ==",
 					},
@@ -949,26 +949,26 @@ func TestEmbeddedArgsWithFilter(t *testing.T) {
 	assert.Equal(t, map[string]interface{}{
 		"inner": map[string]interface{}{
 			"innerConnectionWithFilter": map[string]interface{}{
-				"totalCount": float64(6),
+				"totalCount": "6",
 				"edges": []interface{}{
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(1),
-							"id":    float64(1),
+							"__key": "1",
+							"id":    "1",
 						},
 						"cursor": "MQ==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(3),
-							"id":    float64(3),
+							"__key": "3",
+							"id":    "3",
 						},
 						"cursor": "Mw==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(5),
-							"id":    float64(5),
+							"__key": "5",
+							"id":    "5",
 						},
 						"cursor": "NQ==",
 					},
@@ -1044,26 +1044,26 @@ func TestEmbeddedArgsWithPageInfo(t *testing.T) {
 	assert.Equal(t, map[string]interface{}{
 		"inner": map[string]interface{}{
 			"innerConnection": map[string]interface{}{
-				"totalCount": float64(5),
+				"totalCount": "5",
 				"edges": []interface{}{
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(1),
-							"id":    float64(1),
+							"__key": "1",
+							"id":    "1",
 						},
 						"cursor": "MQ==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(2),
-							"id":    float64(2),
+							"__key": "2",
+							"id":    "2",
 						},
 						"cursor": "Mg==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(3),
-							"id":    float64(3),
+							"__key": "3",
+							"id":    "3",
 						},
 						"cursor": "Mw==",
 					},
@@ -1141,26 +1141,26 @@ func TestEmbeddedArgsWithFilterAndPageInfo(t *testing.T) {
 	assert.Equal(t, map[string]interface{}{
 		"inner": map[string]interface{}{
 			"innerConnectionWithFilter": map[string]interface{}{
-				"totalCount": float64(4),
+				"totalCount": "4",
 				"edges": []interface{}{
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(1),
-							"id":    float64(1),
+							"__key": "1",
+							"id":    "1",
 						},
 						"cursor": "MQ==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(3),
-							"id":    float64(3),
+							"__key": "3",
+							"id":    "3",
 						},
 						"cursor": "Mw==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(5),
-							"id":    float64(5),
+							"__key": "5",
+							"id":    "5",
 						},
 						"cursor": "NQ==",
 					},
@@ -1362,26 +1362,26 @@ func TestPaginatedFilters(t *testing.T) {
 	assert.Equal(t, map[string]interface{}{
 		"inner": map[string]interface{}{
 			"innerConnectionWithFilter": map[string]interface{}{
-				"totalCount": float64(3),
+				"totalCount": "3",
 				"edges": []interface{}{
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(1),
-							"id":    float64(1),
+							"__key": "1",
+							"id":    "1",
 						},
 						"cursor": "MQ==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(3),
-							"id":    float64(3),
+							"__key": "3",
+							"id":    "3",
 						},
 						"cursor": "Mw==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(5),
-							"id":    float64(5),
+							"__key": "5",
+							"id":    "5",
 						},
 						"cursor": "NQ==",
 					},
@@ -1413,26 +1413,26 @@ func TestPaginatedFilters(t *testing.T) {
 	assert.Equal(t, map[string]interface{}{
 		"inner": map[string]interface{}{
 			"innerConnectionWithFilterWithArgs": map[string]interface{}{
-				"totalCount": float64(3),
+				"totalCount": "3",
 				"edges": []interface{}{
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(1),
-							"id":    float64(1),
+							"__key": "1",
+							"id":    "1",
 						},
 						"cursor": "MQ==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(3),
-							"id":    float64(3),
+							"__key": "3",
+							"id":    "3",
 						},
 						"cursor": "Mw==",
 					},
 					map[string]interface{}{
 						"node": map[string]interface{}{
-							"__key": float64(5),
-							"id":    float64(5),
+							"__key": "5",
+							"id":    "5",
 						},
 						"cursor": "NQ==",
 					},
@@ -1703,34 +1703,34 @@ func TestPaginatedSorts(t *testing.T) {
 		assert.Equal(t, map[string]interface{}{
 			"inner": map[string]interface{}{
 				"innerConnectionWithSort": map[string]interface{}{
-					"totalCount": float64(5),
+					"totalCount": "5",
 					"edges": []interface{}{
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(1),
-								"id":     float64(1),
-								"number": float64(1),
+								"__key":  "1",
+								"id":     "1",
+								"number": "1",
 							},
 						},
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(4),
-								"id":     float64(4),
-								"number": float64(2),
+								"__key":  "4",
+								"id":     "4",
+								"number": "2",
 							},
 						},
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(2),
-								"id":     float64(2),
-								"number": float64(3),
+								"__key":  "2",
+								"id":     "2",
+								"number": "3",
 							},
 						},
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(5),
-								"id":     float64(5),
-								"number": float64(4),
+								"__key":  "5",
+								"id":     "5",
+								"number": "4",
 							},
 						},
 					},
@@ -1795,34 +1795,34 @@ func TestPaginatedSorts(t *testing.T) {
 		assert.Equal(t, map[string]interface{}{
 			"inner": map[string]interface{}{
 				"innerConnectionWithSortWithArgs": map[string]interface{}{
-					"totalCount": float64(5),
+					"totalCount": "5",
 					"edges": []interface{}{
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(1),
-								"id":     float64(1),
-								"number": float64(1),
+								"__key":  "1",
+								"id":     "1",
+								"number": "1",
 							},
 						},
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(5),
-								"id":     float64(5),
-								"number": float64(4),
+								"__key":  "5",
+								"id":     "5",
+								"number": "4",
 							},
 						},
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(4),
-								"id":     float64(4),
-								"number": float64(2),
+								"__key":  "4",
+								"id":     "4",
+								"number": "2",
 							},
 						},
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(2),
-								"id":     float64(2),
-								"number": float64(3),
+								"__key":  "2",
+								"id":     "2",
+								"number": "3",
 							},
 						},
 					},
@@ -1873,27 +1873,27 @@ func TestPaginatedSorts(t *testing.T) {
 		assert.Equal(t, map[string]interface{}{
 			"inner": map[string]interface{}{
 				"innerConnectionWithSort": map[string]interface{}{
-					"totalCount": float64(5),
+					"totalCount": "5",
 					"edges": []interface{}{
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(2),
-								"id":     float64(2),
-								"number": float64(3),
+								"__key":  "2",
+								"id":     "2",
+								"number": "3",
 							},
 						},
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(5),
-								"id":     float64(5),
-								"number": float64(4),
+								"__key":  "5",
+								"id":     "5",
+								"number": "4",
 							},
 						},
 						map[string]interface{}{
 							"node": map[string]interface{}{
-								"__key":  float64(3),
-								"id":     float64(3),
-								"number": float64(5),
+								"__key":  "3",
+								"id":     "3",
+								"number": "5",
 							},
 						},
 					},

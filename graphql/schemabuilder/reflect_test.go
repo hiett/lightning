@@ -177,22 +177,22 @@ func TestExecuteGood(t *testing.T) {
 
 	if !reflect.DeepEqual(internal.AsJSON(result), internal.ParseJSON(`
 		{"users": [
-			{"name": "Alice", "foo": 10, "friends": [], "extended": "extended", "__key": "Alice"},
-			{"name": "Bob", "foo": 20, "friends": [], "extended": "extended", "__key": "Bob"}
+			{"name": "Alice", "foo": "10", "friends": [], "extended": "extended", "__key": "Alice"},
+			{"name": "Bob", "foo": "20", "friends": [], "extended": "extended", "__key": "Bob"}
 		],
 		"nilObject": null,
 		"nilSlice": [],
-		"has": 10,
-		"hasNot": -1,
-		"hasField": 10,
+		"has": "10",
+		"hasNot": "-1",
+		"hasField": "10",
 		"hasNotField": null,
-		"ints": [1, 2, 3, 4],
+		"ints": ["1", "2", "3", "4"],
 		"getCtx": "hello there",
-		"sum": 4,
-		"ptr": {"name": "Charlie", "age": 5, "byRef": "byRef", "byVal": "byVal", "__key": "Charlie"},
-		"plain": {"name": "Jane", "age": 5, "byRef": "byRef", "byVal": "byVal", "__key": "Jane"},
-		"root": {"nested": {"time": "2016-03-23T18:31:51Z", "bytes": "YmFy", "bar": 1234, "alias": 999}},
-		"weirdKey": {"key": -1, "__key": -1}
+		"sum": "4",
+		"ptr": {"name": "Charlie", "age": "5", "byRef": "byRef", "byVal": "byVal", "__key": "Charlie"},
+		"plain": {"name": "Jane", "age": "5", "byRef": "byRef", "byVal": "byVal", "__key": "Jane"},
+		"root": {"nested": {"time": "2016-03-23T18:31:51Z", "bytes": "YmFy", "bar": "1234", "alias": "999"}},
+		"weirdKey": {"key": "-1", "__key": "-1"}
 		}`)) {
 		t.Error("bad value")
 	}

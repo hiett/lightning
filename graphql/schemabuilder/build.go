@@ -4,10 +4,8 @@ import (
 	"encoding"
 	"fmt"
 	"reflect"
-	"time"
 
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/internal"
 )
 
 // schemaBuilder is a struct for holding all the graph information for types as
@@ -47,11 +45,11 @@ func (sb *schemaBuilder) getType(nodeType reflect.Type, forceListEntryNonNull bo
 	}
 
 	if typeName, ok := getScalar(nodeType); ok {
-		return &graphql.NonNull{Type: &graphql.Scalar{Type: typeName}}, nil
+		return &graphql.NonNull{Type: newScalar(typeName)}, nil
 	}
 	if nodeType.Kind() == reflect.Ptr {
 		if typeName, ok := getScalar(nodeType.Elem()); ok {
-			return &graphql.Scalar{Type: typeName}, nil // XXX: prefix typ with "*"
+			return newScalar(typeName), nil // XXX: prefix typ with "*"
 		}
 	}
 
@@ -99,7 +97,7 @@ func (sb *schemaBuilder) getType(nodeType reflect.Type, forceListEntryNonNull bo
 // response.
 func (sb *schemaBuilder) getTextMarshalerType(typ reflect.Type) (graphql.Type, error) {
 	scalar := &graphql.Scalar{
-		Type: "string",
+		Type: ScalarString,
 		Unwrapper: func(source interface{}) (interface{}, error) {
 			i := reflect.ValueOf(source)
 			if i.Kind() == reflect.Ptr && i.IsNil() {
@@ -133,34 +131,4 @@ func (sb *schemaBuilder) getEnum(typ reflect.Type) (string, []string, bool) {
 		return typ.Name(), values, true
 	}
 	return "", nil, false
-}
-
-// getScalar grabs the appropriate scalar graphql field type name for the passed
-// in variable reflect type.
-func getScalar(typ reflect.Type) (string, bool) {
-	for match, name := range scalars {
-		if internal.TypesIdenticalOrScalarAliases(match, typ) {
-			return name, true
-		}
-	}
-	return "", false
-}
-
-var scalars = map[reflect.Type]string{
-	reflect.TypeOf(bool(false)): "bool",
-	reflect.TypeOf(int(0)):      "int",
-	reflect.TypeOf(int8(0)):     "int8",
-	reflect.TypeOf(int16(0)):    "int16",
-	reflect.TypeOf(int32(0)):    "int32",
-	reflect.TypeOf(int64(0)):    "int64",
-	reflect.TypeOf(uint(0)):     "uint",
-	reflect.TypeOf(uint8(0)):    "uint8",
-	reflect.TypeOf(uint16(0)):   "uint16",
-	reflect.TypeOf(uint32(0)):   "uint32",
-	reflect.TypeOf(uint64(0)):   "uint64",
-	reflect.TypeOf(float32(0)):  "float32",
-	reflect.TypeOf(float64(0)):  "float64",
-	reflect.TypeOf(string("")):  "string",
-	reflect.TypeOf(time.Time{}): "Time",
-	reflect.TypeOf([]byte{}):    "bytes",
 }

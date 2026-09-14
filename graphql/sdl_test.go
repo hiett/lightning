@@ -51,7 +51,7 @@ func TestPrintSchema(t *testing.T) {
 		"schema {\n  query: Query\n  mutation: Mutation\n}",
 		"type SDLInner {",
 		"input SDLNestedArg_InputObject {",
-		"type Mutation {\n  touch: bool!\n}",
+		"type Mutation {\n  touch: Boolean!\n}",
 	} {
 		require.Contains(t, sdl, want, "printed schema:\n%s", sdl)
 	}
@@ -85,8 +85,8 @@ func TestPrintSchemaRoundTrips(t *testing.T) {
 
 	// Nullability survives: a *string field is nullable, a string field is not.
 	inner := astSchema.Types["SDLNestedArg_InputObject"]
-	require.Equal(t, "string!", fieldTypeString(t, inner, "x"))
-	require.Equal(t, "string", fieldTypeString(t, inner, "y"))
+	require.Equal(t, "String!", fieldTypeString(t, inner, "x"))
+	require.Equal(t, "String", fieldTypeString(t, inner, "y"))
 }
 
 func fieldTypeString(t *testing.T, def *ast.Definition, name string) string {
