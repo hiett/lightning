@@ -212,6 +212,22 @@ func (s *Schema) Mutation() *Object {
 	return s.Object("Mutation", mutation{})
 }
 
+type subscription struct{}
+
+// Subscription returns an Object struct on which to register the top level
+// subscription fields.
+//
+// A subscription in lightning is a live query: the operation is executed like a
+// query, and re-executed whenever a resource it depended on is invalidated,
+// with the full result pushed to the client each time. Registering a field here
+// says only that it is a legal root for a subscription operation.
+//
+// The subscription root is only added to the schema if at least one field is
+// registered on it.
+func (s *Schema) Subscription() *Object {
+	return s.Object("Subscription", subscription{})
+}
+
 const DuplicateTypeNameErrFormat string = "%s type name is duplicated in packages %s and %s"
 
 // checkTypeNameUniqueness returns an error if the package of the typ argument
@@ -363,6 +379,10 @@ func (s *Schema) Build() (*graphql.Schema, error) {
 	s.Object("Query", query{})
 	s.Object("Mutation", mutation{})
 
+	// The subscription root is optional: a schema that never calls
+	// Subscription() should not advertise one.
+	hasSubscription := s.objects["Subscription"] != nil
+
 	for _, object := range s.objects {
 		typ := reflect.TypeOf(object.Type)
 		if typ.Kind() != reflect.Struct {
@@ -416,6 +436,14 @@ func (s *Schema) Build() (*graphql.Schema, error) {
 		return nil, err
 	}
 
+	var subscriptionTyp graphql.Type
+	if hasSubscription {
+		subscriptionTyp, err = sb.getType(reflect.TypeOf(&subscription{}), true)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if sb.nodeRootFields != nil {
 		queryObject, ok := queryTyp.(*graphql.Object)
 		if !ok {
@@ -430,8 +458,9 @@ func (s *Schema) Build() (*graphql.Schema, error) {
 	}
 
 	return &graphql.Schema{
-		Query:    queryTyp,
-		Mutation: mutationTyp,
+		Query:        queryTyp,
+		Mutation:     mutationTyp,
+		Subscription: subscriptionTyp,
 	}, nil
 }
 

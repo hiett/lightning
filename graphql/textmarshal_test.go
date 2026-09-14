@@ -11,6 +11,7 @@ import (
 )
 
 func TestTextMarshaling(t *testing.T) {
+	counter = 0
 	schema := schemabuilder.NewSchema()
 
 	type Inner struct {
@@ -130,6 +131,10 @@ func NewUuidPtr() *Uuid {
 	return &u
 }
 
+// counter makes the generated UUIDs deterministic. It is package state, so
+// each test that relies on it resets it — otherwise a second run of the test in
+// the same process (go test -count=2) generates different UUIDs and the
+// snapshot no longer matches.
 var counter = byte(0)
 
 func NewUuid() Uuid {
