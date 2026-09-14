@@ -1,384 +1,433 @@
-# ⚠️ Deprecated
+# lightning
 
-As of Feb 15, 2023, this repository is deprecated and no longer maintained. If you are looking for a GraphQL server library in Golang, please consider [alternatives](https://graphql.org/code/#go). Thank you for your interest in Thunder.
+A Go GraphQL server library with **reactive live queries**, built to talk to a
+Relay client without adapters or apologies.
 
-# Thunder
-
-Thunder is a Go framework for rapidly building powerful graphql servers.
-Thunder has support for schemas automatically generated from Go types, live
-queries, query batching, and more. Thunder is an open-source project from
-Samsara.
-
-[![Documentation](https://godoc.org/github.com/hiett/lightning?status.svg)](http://godoc.org/github.com/hiett/lightning)
-
-# Feature Lightning Tour
-
-Thunder has a number of features to make it easy to build sophisticated
-schemas. This section provides a brief overview of some of them.
-
-## Reflection-based schema building
-
-Thunder generates resolvers automatically from Go struct types and function
-definitions. For example, the `Friend` struct below gets exposed as a graphql
-object type with `firstName` and `lastName` resolvers that return the fields
-on the type.
+lightning is a fork of [samsarahq/thunder](https://github.com/samsarahq/thunder),
+which Samsara deprecated in February 2023. Thunder had one genuinely rare
+capability — automatic dependency tracking during execution, re-execution on
+invalidation, and JSON diffs pushed to clients over a websocket — and that is
+the reason for the fork. Everything else has been brought up to the modern
+specification.
 
 ```go
-// Friend is a small struct representing a person.
-type Friend struct {
-  FirstName string
-  Last string `graphql:"lastName"` // use a custom name
+schema := schemabuilder.NewSchema()
 
-  Added time.Date `graphql:"-"` // don't expose over graphql
-}
+schema.Query().FieldFunc("tasks", func(ctx context.Context) []*Task {
+    return store.Tasks(ctx) // store.Tasks records a dependency
+}, schemabuilder.Paginated)
 
-// FullName builds a friend's full name.
-func (f *Friend) FullName() string {
-  return fmt.Sprintf("%s %s", f.FirstName, f.Last)
-}
-
-// registerFriend registers custom resolvers on the Friend type.
-//
-// Note: registerFriend wouldn't be necessary if the type only
-// had the default struct field resolvers above.
-func registerFriend(schema *schemabuilder.Schema) {
-  object := schema.Object("Friend", Friend{})
-
-  // fullName is a computed field on the Friend{} object.
-  object.FieldFunc("fullName", Friend.FullName)
-}
+http.Handle("/graphql", graphql.HTTPHandler(schema.MustBuild()))
 ```
 
-## [Pagination](./doc/pagination.md)
+When `store` later announces that tasks changed, every live query that read
+them re-executes and its client is sent the difference. No polling, no manual
+subscription plumbing, no invalidation logic in your resolvers beyond saying
+what they read.
 
-## Live queries
+---
 
-Thunder has support for automatically updating queries using _resolver
-invalidation_. With invalidation, code on the server can trigger updates on
-the client using a persistent WebSocket connection.
+## What changed from thunder
 
-The simplest example is a clock that updates over time. Every 10 seconds the
-`time` function will be recomputed, and the latest time will be sent to the
-client.
+| | thunder | lightning |
+|---|---|---|
+| Parser | `graphql-go/graphql` pinned to a 2016 commit | `vektah/gqlparser/v2` |
+| Validation | none; queries failed lazily during execution | full, before execution begins |
+| Scalars | `string`, `bool`, `int64`, `float64`, `bytes` | `String`, `Boolean`, `Int`, `Float`, `ID`, plus `Int64`, `Time`, `Bytes` |
+| Errors | `"errors": ["..."]` | specification objects with `message`, `locations`, `path` |
+| Interfaces | none | full, including `__typename` and type conditions |
+| Relay `Node` | none | `node(id:)`, `nodes(ids:)`, global identifiers |
+| Connections | close, with `hasPrevPage` | conformant, verified against relay-compiler |
+| SDL export | none | `graphql.WriteSchemaFile` |
+| Subscriptions | a bespoke websocket protocol | that, plus `graphql-transport-ws` |
+| `operationName` | ignored | honoured |
+| Dependencies | ~20, several abandoned | 7, all current |
+| Databases | `livesql` + `sqlgen` built in | none; bring your own invalidation source |
 
-```go
-// registerQuery registers the resolvers on the core graphql query type.
-func registerQuery(schema *schemabuilder.Schema) {
-  query := schema.Query()
+`DECISIONS.md` records why each of those went the way it did.
 
-  // time returns the current time.
-  query.FieldFunc("time", func(ctx context.Context) string {
-    // Invalidate the result of this resolver after 10 seconds.
-    reactive.InvalidateAfter(ctx, 10 * time.Second)
-    // Return the current time. Will be re-executed automatically.
-    return time.Now().String()
-  })
-}
+---
+
+## Getting started
+
+```
+go get github.com/hiett/lightning
 ```
 
-Using Thunder's lightweight `sqlgen` and `livesql` ORM, it's easy to write
-automatically updating MySQL queries. The example below returns a live-updating
-lists of posts from a database table. Whenever somebody `INSERT`s or `UPDATE`s
-a row in the table, the resolver is re-executed and the latest lists of posts
-is sent to the client. Behind the scenes, the `livesql` package uses MySQL's
-binary replication log to detect changes to the underlying data.
+The `example/` directory is a complete working server — an interface, the Node
+interface, a connection, a mutation and a live query — with a Relay app in
+`example/web/` that compiles against the exported schema. Run it:
+
+```
+cd example && go run ./cmd/server
+```
+
+and open <http://localhost:8080> for GraphiQL.
+
+---
+
+## Building a schema
+
+Schemas are built by reflection over Go types. A struct becomes an object type,
+its exported fields become fields, and `FieldFunc` adds resolvers.
 
 ```go
-// A Post holds a row from the MySQL posts table.
-type Post struct {
-  Id    int64 `sqlgen:",primary"`
-  Title string
+type Task struct {
+    Title string `description:"What needs doing."`
+    Done  bool
+    Added time.Time `graphql:"-"` // not exposed
 }
 
-// Server implements a graphql server. It has persistent handles to eg. the
-// database.
-type Server struct {
-  db *livesql.LiveDB
+schema := schemabuilder.NewSchema()
+
+task := schema.Object("Task", Task{})
+task.Describe("A unit of work.")
+task.FieldFunc("owner", func(ctx context.Context, t *Task) *User {
+    return store.User(ctx, t.OwnerID)
+}, schemabuilder.Description("Whoever the task belongs to."))
+
+schema.Query().FieldFunc("tasks", func(ctx context.Context) []*Task {
+    return store.Tasks(ctx)
+})
+
+built := schema.MustBuild()
+```
+
+### Scalars
+
+| Go | GraphQL | Notes |
+|---|---|---|
+| `string` | `String` | |
+| `bool` | `Boolean` | |
+| `int8`, `int16`, `int32`, `uint8`, `uint16` | `Int` | everything that fits in 32 signed bits |
+| `int`, `int64`, `uint`, `uint32`, `uint64` | `Int64` | **serialised as a decimal string** |
+| `float32`, `float64` | `Float` | |
+| `schemabuilder.ID` | `ID` | |
+| `time.Time` | `Time` | RFC 3339 |
+| `[]byte` | `Bytes` | base64 |
+
+`Int64` is a string on the wire because a GraphQL `Int` is 32-bit and a JSON
+number loses precision above 2⁵³ once a JavaScript client parses it. Go's `int`
+is 64 bits, so it maps to `Int64` too; declare a field `int32` if it genuinely
+is a small number and you want a JSON number.
+
+### Documentation
+
+Struct fields take tags; registered fields take options.
+
+```go
+type User struct {
+    Name  string `description:"The user's display name."`
+    Email string `description:"Where to reach them." deprecated:"Use emails instead."`
 }
 
-// registerQuery registers the root query resolvers.
-func (s *Server) registerQuery(schema *schemabuilder.Schema) {
-  query := schema.Query()
-  // posts returns all posts in the database.
-  query.FieldFunc("posts", func(ctx context.Context) ([]*Post, error) {
-    var posts []*Post
-    if err := s.db.Query(ctx, &posts, nil, nil); err != nil {
-      return nil, err
+user.FieldFunc("friends", resolve,
+    schemabuilder.Description("Everyone this user follows."),
+    schemabuilder.ArgDescription("limit", "How many to return."),
+    schemabuilder.Deprecated("Use following instead."))
+```
+
+Both reach introspection and the exported SDL.
+
+---
+
+## Interfaces
+
+An interface is declared by a marker struct whose embedded pointers name its
+implementing types — the same shape as `schemabuilder.Union`.
+
+```go
+type Actor struct {
+    schemabuilder.Interface
+
+    *User
+    *Team
+}
+
+schema.Interface("Actor", Actor{}).
+    Fields("id", "displayName").
+    Describe("Whoever a task belongs to.")
+```
+
+A field returning an interface returns the struct with exactly one member set:
+
+```go
+task.FieldFunc("owner", func(ctx context.Context, t *Task) *Actor {
+    if user := store.User(ctx, t.OwnerID); user != nil {
+        return &Actor{User: user}
     }
-    return posts, nil
-  })
-}
+    return &Actor{Team: store.Team(ctx, t.OwnerID)}
+})
 ```
 
-## Built-in parallel execution and batching
+`Fields(...)` declares the interface's field set explicitly. Every named field
+must exist on every implementing type with the same type and arguments, or the
+schema fails to build. Leave it out and the interface exposes everything its
+implementing types agree on.
 
-Thunder automatically runs independent resolvers in different goroutines to
-quickly compute complex queries. To keep large queries efficient, Thunder has
-support for built-in batching similar to Facebook's `dataloader`. With
-batching, Thunder automatically combines many parallel individual calls to a
-`batch.Func`'s `Invoke` function into a single call to `Many` function.
+---
 
-Batching is very useful when fetching related objects from a SQL database. Thunder's
-`sqlgen` and `livesql` have built-in support for batching and will combine `SELECT WHERE`
-statements using an `IN` clause. For example, the program below will fetch all posts and
-their authors in just two queries.
+## The Node interface and global identifiers
+
+Relay's store keys off a globally unique `id`. Without one, `@refetchable`,
+`usePaginationFragment` refetch and store normalisation all break.
+
+A type declares itself a node by saying how to read its identifier and how to
+fetch it back:
 
 ```go
-type Post struct {
-  Id    int64 `sqlgen:",primary"`
-  Title string
-  AuthorId int64
-}
-
-// An Author represents a row in the authors table.
-type Author struct {
-  Id   int64 `sqlgen:",primary"`
-  Name string
-}
-
-// registerPost registers resolvers on the Post type.
-func (s *Server) registerPost(schema *schemabuilder.Schema) {
-  object := schema.Object("post", Post{})
-  // author return the Author object corresponding to a Post's AuthorId.
-  object.FieldFunc("author", func(ctx context.Context, p *Post) (*Author, error) {
-    var author *Author
-    if err := s.db.QueryRow(ctx, &author, sqlgen.Filter{"id": p.AuthorId}, nil); err != nil {
-      return nil, err
-    }
-    return author, nil
-  })
-}
-```
-
-To execute the query
-```graphql
-query PostsWithAuthors {
-  posts {
-    title
-    author { name }
-  }
-}
-```
-Thunder will execute `SELECT * FROM posts` and, if that returns three posts
-with author IDs `10`, `20`, and `31`, a follow-up query `SELECT * FROM
-authors WHERE id IN (10, 20, 31)`.
-
-## Built-in graphiql
-
-To get started quickly without wrangling any JavaScript, Thunder comes with
-a built-in `graphiql` client as an HTTP handler. To use it, simply expose
-with Go's built-in HTTP server.
-
-```go
-// Expose schema and graphiql.
-http.Handle("/graphql", graphql.Handler(schema))
-http.Handle("/graphiql/", http.StripPrefix("/graphiql/", graphiql.Handler()))
-http.ListenAndServe(":3030", nil)
-```
-
-## Split schema building for large graphql servers
-
-A large GraphQL server might have many resolvers on some shared types. To
-keep packages reasonably-sized, Thunder's schema builder supports extending a
-schema. For example, if you have a `User` type with a resolver `photos`
-implemented by your `photos` package, and resolver `events` implemented by
-your `calendar` package, those packages can independently register their
-resolvers:
-
-```go
-package common
-
-type User struct {}
-
-
-package photos
-
-type PhotosServer {}
-
-func (s *PhotosServer) registerUser(schema *schemabuilder.Schema) {
-  object := schema.Object("User", common.User{})
-  object.FieldFunc("photos", s.fetchUserPhotos)
-}
-
-
-package events
-
-type EventsServer {}
-
-func (s *EventsServer) registerUser(schema *schemabuilder.Schema) {
-  object := schema.Object("User", common.User{})
-  object.FieldFunc("events", s.fetchUserEvents)
-}
-```
-
-# Getting started
-
-> First, a fair warning. The Thunder library is still a little bit tricky to use
-> outside of Samsara. The examples above and below work, but eg. the `npm` client
-> still requires some wrangling.
-
-## A minimal complete server
-
-The program below is a fully-functional graphql server written using Thunder. It
-does not use `sqlgen`, `livesql`, or batching, but does include a live-updating
-resolver.
-
-```go
-package main
-
-import (
-  "context"
-  "net/http"
-  "time"
-
-  "github.com/hiett/lightning/graphql"
-  "github.com/hiett/lightning/graphql/graphiql"
-  "github.com/hiett/lightning/graphql/introspection"
-  "github.com/hiett/lightning/graphql/schemabuilder"
-  "github.com/hiett/lightning/reactive"
+task := schema.Object("Task", Task{})
+task.Node(
+    func(t *Task) string { return t.Key },
+    func(ctx context.Context, id string) (*Task, error) { return store.Task(ctx, id), nil },
 )
-
-type post struct {
-  Title     string
-  Body      string
-  CreatedAt time.Time
-}
-
-// server is our graphql server.
-type server struct {
-  posts []post
-}
-
-// registerQuery registers the root query type.
-func (s *server) registerQuery(schema *schemabuilder.Schema) {
-  obj := schema.Query()
-
-  obj.FieldFunc("posts", func() []post {
-    return s.posts
-  })
-}
-
-// registerMutation registers the root mutation type.
-func (s *server) registerMutation(schema *schemabuilder.Schema) {
-  obj := schema.Mutation()
-  obj.FieldFunc("echo", func(args struct{ Message string }) string {
-    return args.Message
-  })
-}
-
-// registerPost registers the post type.
-func (s *server) registerPost(schema *schemabuilder.Schema) {
-  obj := schema.Object("Post", post{})
-  obj.FieldFunc("age", func(ctx context.Context, p *post) string {
-    reactive.InvalidateAfter(ctx, 5*time.Second)
-    return time.Since(p.CreatedAt).String()
-  })
-}
-
-// schema builds the graphql schema.
-func (s *server) schema() *graphql.Schema {
-  builder := schemabuilder.NewSchema()
-  s.registerQuery(builder)
-  s.registerMutation(builder)
-  s.registerPost(builder)
-  return builder.MustBuild()
-}
-
-func main() {
-  // Instantiate a server, build a server, and serve the schema on port 3030.
-  server := &server{
-    posts: []post{
-      {Title: "first post!", Body: "I was here first!", CreatedAt: time.Now()},
-      {Title: "graphql", Body: "did you hear about Thunder?", CreatedAt: time.Now()},
-    },
-  }
-
-  schema := server.schema()
-  introspection.AddIntrospectionToSchema(schema)
-
-  // Expose schema and graphiql.
-  http.Handle("/graphql", graphql.Handler(schema))
-  http.Handle("/graphiql/", http.StripPrefix("/graphiql/", graphiql.Handler()))
-  http.ListenAndServe(":3030", nil)
-}
 ```
 
-## Using Thunder without Websockets (POST requests)
+That gives the type an `id` field carrying its **global** identifier, makes it a
+member of the `Node` interface, and adds `node(id: ID!): Node` and
+`nodes(ids: [ID!]!): [Node]!` to the query root.
 
-For use with non-live clients (e.g. [Relay](https://facebook.github.io/relay/), [Apollo](https://www.apollographql.com/client/)) thunder provides an HTTP handler that can serve
-POST requests, instead of having the client connect over a websocket. In this mode, thunder
-does not provide live query updates.
-
-In the above example, the `main` function would be changed to look like:
+The default global identifier is base64 of `TypeName:localID`. That is
+obfuscation, not secrecy — anyone can decode it. Replace the codec if your
+identifiers must not be guessable or forgeable:
 
 ```go
-func main() {
-  // Instantiate a server, build a server, and serve the schema on port 3030.
-  server := &server{
-    posts: []post{
-      {Title: "first post!", Body: "I was here first!", CreatedAt: time.Now()},
-      {Title: "graphql", Body: "did you hear about Thunder?", CreatedAt: time.Now()},
-    },
-  }
-
-  schema := server.schema()
-  introspection.AddIntrospectionToSchema(schema)
-
-  // Expose GraphQL POST endpoint.
-  http.Handle("/graphql", graphql.HTTPHandler(schema))
-  http.ListenAndServe(":3030", nil)
-}
+schema.SetGlobalIDCodec(mySignedCodec{}) // implements schemabuilder.GlobalIDCodec
 ```
 
-## Emitting a schema.json
-
-Thunder can emit a GraphQL introspection query schema useful for compatibility with
-other GraphQL tooling. Alongside code from the above example, here is a small program
-for registering our schema and writing the JSON output to stdout.
+A mutation that takes a global identifier decodes it with the same codec:
 
 ```go
-// schema_generator.go
+_, localID, err := schemabuilder.Base64GlobalIDCodec{}.Decode(args.Id.Value)
+```
 
-func main() {
-  // Instantiate a server and run the introspection query on it.
-  server := &server{...}
+---
 
-  builderSchema := schemabuilder.NewSchema()
-  server.registerQuery(builderSchema)
-  server.registerMutation(builderSchema)
-  // ...
+## Connections
 
-  valueJSON, err := introspection.ComputeSchemaJSON(*builderSchema)
-  if err != nil {
-    panic(err)
-  }
+Adding `schemabuilder.Paginated` to a field that returns a slice generates a
+Relay connection: `TaskConnection`, `TaskEdge`, base64 cursors, `pageInfo` with
+`hasNextPage` / `hasPreviousPage` / `startCursor` / `endCursor`, a `totalCount`,
+and the `first` / `last` / `before` / `after` arguments.
 
-  fmt.Print(string(valueJSON))
+```go
+task.Key("key") // a paginated type needs a key field; cursors are built from it
+
+schema.Query().FieldFunc("tasks", func(ctx context.Context) []*Task {
+    return store.Tasks(ctx)
+}, schemabuilder.Paginated)
+```
+
+Two extensions beyond the specification, both of which Relay ignores:
+`totalCount`, and `pageInfo.pages` for page-number pagination.
+
+---
+
+## Subscriptions and live queries
+
+There are two ways to push data, and they are not alternatives so much as
+different audiences.
+
+### `graphql-transport-ws`
+
+The interoperable one. Register subscription roots and serve the protocol any
+standard client speaks:
+
+```go
+schema.Subscription().FieldFunc("tasks", func(ctx context.Context) []*Task {
+    return store.Tasks(ctx)
+}, schemabuilder.Paginated)
+
+http.Handle("/graphql/ws", graphql.TransportWSHandler(built))
+```
+
+A subscription here is a **live query**: the operation is executed like a
+query, re-executed whenever a resource it read is invalidated, and the complete
+result is sent each time. Queries and mutations work over the same socket.
+
+Authentication hooks into `connection_init`:
+
+```go
+graphql.TransportWSHandler(built,
+    graphql.WithTransportWSConnectionInit(func(ctx context.Context, payload json.RawMessage) (context.Context, error) {
+        // returning an error closes the connection with code 4401
+        return context.WithValue(ctx, userKey{}, user), nil
+    }))
+```
+
+### lightning's diff protocol
+
+The efficient one, and the reason for the fork. `graphql.Handler(built)` serves
+a websocket that pushes a **JSON diff** of what changed rather than the whole
+payload. A list of a thousand rows where one field changed is a few dozen
+bytes.
+
+The TypeScript package in `js/` is a Relay network layer for it: it applies each
+diff to the payload it is holding and hands Relay the complete result, so the
+Relay store sees ordinary responses.
+
+```ts
+import { createLightningNetwork } from "@hiett/lightning-relay";
+
+const environment = new Environment({
+  network: createLightningNetwork({ url: "ws://localhost:8080/graphql/live" }),
+  store: new Store(new RecordSource()),
+});
+```
+
+---
+
+## How live queries work
+
+This is the part worth understanding, because everything else is ordinary
+GraphQL.
+
+**1. Execution records what it read.** While a resolver runs, it can call
+`reactive.AddDependency(ctx, resource, key)` to say "this value came from
+there". The `reactive` package keeps a dependency graph of which computations
+read which resources.
+
+**2. Something invalidates a resource.** `resource.Strobe()` marks every
+computation that read it as stale.
+
+**3. The rerunner re-executes.** A `reactive.Rerunner` wrapping a query
+re-runs it, debounced by a minimum interval, and produces a new result.
+
+**4. The difference is pushed.** For the diff protocol, the new result is
+diffed against the previous one and only the difference is sent.
+
+The piece that is yours to supply is step 2 — where change events come from.
+The `invalidation` package is the adapter:
+
+```go
+invalidator := invalidation.New(invalidation.NewMemorySource())
+go invalidator.Run(ctx)
+
+// in a resolver, say what you read
+func (s *Store) Task(ctx context.Context, id string) *Task {
+    invalidator.Depend(ctx, "task:"+id)
+    return s.tasks[id]
+}
+
+// wherever data changes, say what changed
+func (s *Store) SetTaskDone(ctx context.Context, id string, done bool) error {
+    s.tasks[id].Done = done
+    return invalidator.Invalidate(ctx, "task:"+id, "tasks")
 }
 ```
 
-This program can then be run to generate `schema.json`:
-```bash
-$ go run schema_generator.go > schema.json
+A key is an opaque string and its granularity is entirely your choice: a row, a
+table, a tenant.
+
+`MemorySource` keeps events inside one process, which is all a single-process
+server needs. A fleet needs a `Source` that crosses process boundaries, because
+a live query on one machine must re-run when another machine changes the data.
+The interface is two methods:
+
+```go
+type Source interface {
+    Publish(ctx context.Context, keys []string) error
+    Subscribe(ctx context.Context, deliver func(keys []string)) error
+}
 ```
 
-## Code organization
+A Postgres implementation is a thin wrapper over `LISTEN` / `NOTIFY`: `Publish`
+issues `NOTIFY` with the keys as payload; `Subscribe` holds a dedicated
+connection issuing `LISTEN` and calls `deliver` for each notification. It is not
+included here because it would put a database driver in a GraphQL library's
+dependency list, which is exactly the over-reach this fork exists to undo.
 
-The source code in this repository is organized as follows:
-- The example/ directory contains a basic Thunder application.
-- The graphql/ directory contains Thunder's graphql parser and executor.
-- The reactive/ directory contains Thunder's core dependency-tracking and
-  live-update mechanism.
-- The batch/ directory contains Thunder's batching package.
-- The diff/ and merge/ directories contain Thunder's JSON diffing library
-  used for live queries.
-- The livesql/ directory contains a Thunder driver for MySQL.
-- The sqlgen/ directory contains a lightweight SQL query generator used by
-  livesql/.
+---
 
-# Status
+## Exporting the schema
 
- Thunder has proven itself in production use at Samsara for close to two
- years. This repository is still under development, and there will be some
- breaking changes to the API but they should be manageable. If you're
- adventurous, please give it a try.
+relay-compiler, and most other schema-driven tooling, needs a schema file.
+
+```go
+//go:generate go run ./cmd/schema
+
+func main() {
+    if err := graphql.WriteSchemaFile(myschema.Build(), "schema.graphql"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+Output is deterministic — types, fields, arguments and enum values are all
+sorted — so the file can be committed and diffed. It is written atomically, so
+a failed build step leaves the previous schema in place rather than a truncated
+one.
+
+`example/` does exactly this, and `example/web/` runs relay-compiler against the
+result.
+
+---
+
+## Errors
+
+Errors serialise as the specification requires:
+
+```json
+{
+  "data": null,
+  "errors": [
+    { "message": "Internal server error", "path": ["tasks", 2, "owner"] }
+  ]
+}
+```
+
+Only errors that are explicitly client-safe keep their message; anything else
+becomes "Internal server error", so internal detail cannot leak:
+
+```go
+return nil, graphql.NewClientError("no task %q", id)  // the client sees this
+return nil, fmt.Errorf("pq: connection refused")      // the client does not
+```
+
+A **request error** — a malformed query, a validation failure — omits `data`
+entirely. A **field error** keeps `data` present, so a client can use whatever
+did resolve.
+
+---
+
+## Batching
+
+`BatchFieldFunc` receives every source object at once, which is how N+1 queries
+are avoided:
+
+```go
+task.BatchFieldFunc("owner", func(ctx context.Context, tasks map[batch.Index]*Task) (map[batch.Index]*User, error) {
+    ids := make([]string, 0, len(tasks))
+    for _, task := range tasks {
+        ids = append(ids, task.OwnerID)
+    }
+    users := store.UsersByID(ctx, ids) // one round trip
+    ...
+})
+```
+
+`schemabuilder.Expensive` marks a field whose resolution should be
+parallelised.
+
+---
+
+## Development
+
+```
+go build ./...
+go vet ./...
+go test ./...
+go test -race ./...
+```
+
+Snapshot tests regenerate with `go test ./... -rewriteSnapshots`; read the diff
+rather than trusting it.
+
+CI runs build, vet, gofmt, test, the race detector and a `go mod tidy` check on
+every push.
+
+---
+
+## Licence
+
+MIT, inherited from thunder. See `LICENSE`.
