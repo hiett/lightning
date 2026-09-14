@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samsarahq/thunder/batch"
+	"github.com/hiett/lightning/batch"
 	"github.com/stretchr/testify/assert"
 
 )

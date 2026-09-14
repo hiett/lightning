@@ -6,11 +6,11 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/samsarahq/thunder/thunderpb"
-	"github.com/samsarahq/thunder/federation"
+	"github.com/hiett/lightning/thunderpb"
+	"github.com/hiett/lightning/federation"
 	"google.golang.org/grpc"
 
-	"github.com/samsarahq/thunder/graphql"
+	"github.com/hiett/lightning/graphql"
 )
 
 

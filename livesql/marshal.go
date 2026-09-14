@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/samsarahq/thunder/internal/fields"
-	"github.com/samsarahq/thunder/sqlgen"
-	"github.com/samsarahq/thunder/thunderpb"
+	"github.com/hiett/lightning/internal/fields"
+	"github.com/hiett/lightning/sqlgen"
+	"github.com/hiett/lightning/thunderpb"
 )
 
 // valueToField converts a driver.Value into a thunderpb.Field.

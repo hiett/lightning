@@ -9,3 +9,6 @@ experimental/
 .rpt2_cache/
 
 federation/testdata/temp/*
+
+PLAN.md
+CLAUDE.md

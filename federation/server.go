@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/samsarahq/go/oops"
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/introspection"
-	"github.com/samsarahq/thunder/reactive"
-	"github.com/samsarahq/thunder/thunderpb"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/introspection"
+	"github.com/hiett/lightning/reactive"
+	"github.com/hiett/lightning/thunderpb"
 )
 
 type GrpcExecutorClient struct {

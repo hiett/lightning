@@ -3,8 +3,8 @@ package federation
 import (
 	"testing"
 
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/schemabuilder"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

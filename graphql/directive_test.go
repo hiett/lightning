@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/schemabuilder"
-	"github.com/samsarahq/thunder/internal/testgraphql"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning/internal/testgraphql"
 	"github.com/stretchr/testify/assert"
 )
 

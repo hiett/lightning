@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/internal"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/internal"
 )
 
 type dualArgParser struct {

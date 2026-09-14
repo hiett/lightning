@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/samsarahq/go/oops"
-	"github.com/samsarahq/thunder/batch"
+	"github.com/hiett/lightning/batch"
 )
 
 // DB uses a *sql.DB connection that is established by its owner. DB assumes the

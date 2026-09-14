@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/samsarahq/thunder/graphql"
+	"github.com/hiett/lightning/graphql"
 )
 
 // buildStruct is a function for building the graphql.Type for a passed in

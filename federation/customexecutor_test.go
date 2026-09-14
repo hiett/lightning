@@ -7,10 +7,10 @@ import (
 	"bytes"
 
 	"github.com/samsarahq/go/oops"
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/introspection"
-	"github.com/samsarahq/thunder/graphql/schemabuilder"
-	"github.com/samsarahq/thunder/thunderpb"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/introspection"
+	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning/thunderpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

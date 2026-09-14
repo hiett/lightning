@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/graphiql"
-	"github.com/samsarahq/thunder/graphql/introspection"
-	"github.com/samsarahq/thunder/graphql/schemabuilder"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/graphiql"
+	"github.com/hiett/lightning/graphql/introspection"
+	"github.com/hiett/lightning/graphql/schemabuilder"
 )
 
 type Server struct {

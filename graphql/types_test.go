@@ -1,7 +1,7 @@
 package graphql_test
 
 import (
-	"github.com/samsarahq/thunder/graphql"
+	"github.com/hiett/lightning/graphql"
 	"github.com/stretchr/testify/require"
 	"testing"
 )

@@ -7,10 +7,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/samsarahq/thunder/batch"
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/schemabuilder"
-	"github.com/samsarahq/thunder/internal"
+	"github.com/hiett/lightning/batch"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning/internal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

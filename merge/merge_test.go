@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/samsarahq/thunder/internal"
-	"github.com/samsarahq/thunder/merge"
+	"github.com/hiett/lightning/internal"
+	"github.com/hiett/lightning/merge"
 )
 
 func TestMerge(t *testing.T) {

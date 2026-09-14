@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 
 	"github.com/samsarahq/go/oops"
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/introspection"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/introspection"
 )
 
 // SchemaSyncer has a function that checks if the schema has changed,

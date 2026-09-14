@@ -6,7 +6,7 @@ import (
 	"reflect"
 
 	"github.com/samsarahq/go/oops"
-	"github.com/samsarahq/thunder/graphql"
+	"github.com/hiett/lightning/graphql"
 )
 
 // buildFunction takes the reflect type of an object and a method attached to

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/samsarahq/thunder/tools/listEntryNonNullablePatcher/listEntryNonNullablePatcher"
+	"github.com/hiett/lightning/tools/listEntryNonNullablePatcher/listEntryNonNullablePatcher"
 
 	"golang.org/x/tools/go/analysis/multichecker"
 )

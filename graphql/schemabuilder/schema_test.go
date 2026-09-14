@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/samsarahq/thunder/batch"
-	"github.com/samsarahq/thunder/graphql/schemabuilder"
-	"github.com/samsarahq/thunder/graphql/schemabuilder/testdata"
+	"github.com/hiett/lightning/batch"
+	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning/graphql/schemabuilder/testdata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,8 +35,8 @@ func TestDuplicateEnumNamesFailSchema(t *testing.T) {
 	errStr := err.Error()
 	require.Contains(t, errStr, "type name is duplicated")
 	require.Contains(t, errStr, "DupedEnumType")
-	require.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder_test")
-	require.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder/testdata")
+	require.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder_test")
+	require.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder/testdata")
 }
 
 type User struct {
@@ -117,8 +117,8 @@ func TestDuplicateStructTypeNamesFailSchema(t *testing.T) {
 		errStr := err.Error()
 		assert.Contains(t, errStr, "type name is duplicated")
 		assert.Contains(t, errStr, "DupedStructType")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder_test")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder/testdata")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder_test")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder/testdata")
 	}
 
 	{
@@ -136,8 +136,8 @@ func TestDuplicateStructTypeNamesFailSchema(t *testing.T) {
 		errStr := err.Error()
 		assert.Contains(t, errStr, "type name is duplicated")
 		assert.Contains(t, errStr, "DupedStructType")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder_test")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder/testdata")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder_test")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder/testdata")
 	}
 
 	{
@@ -160,8 +160,8 @@ func TestDuplicateStructTypeNamesFailSchema(t *testing.T) {
 		errStr := err.Error()
 		assert.Contains(t, errStr, "type name is duplicated")
 		assert.Contains(t, errStr, "DupedStructType")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder_test")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder/testdata")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder_test")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder/testdata")
 	}
 
 	{
@@ -191,8 +191,8 @@ func TestDuplicateStructTypeNamesFailSchema(t *testing.T) {
 		errStr := err.Error()
 		assert.Contains(t, errStr, "type name is duplicated")
 		assert.Contains(t, errStr, "DupedStructType")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder_test")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder/testdata")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder_test")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder/testdata")
 	}
 }
 
@@ -217,8 +217,8 @@ func TestDuplicateTypeNamesOfDifferentKinds(t *testing.T) {
 		errStr := err.Error()
 		assert.Contains(t, errStr, "type name is duplicated")
 		assert.Contains(t, errStr, "Foo")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder_test")
-		assert.Contains(t, errStr, "github.com/samsarahq/thunder/graphql/schemabuilder/testdata")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder_test")
+		assert.Contains(t, errStr, "github.com/hiett/lightning/graphql/schemabuilder/testdata")
 	}
 
 	{

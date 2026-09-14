@@ -1,6 +1,6 @@
-module github.com/samsarahq/thunder
+module github.com/hiett/lightning
 
-go 1.15
+go 1.23
 
 require (
 	github.com/davecgh/go-spew v1.1.1
@@ -8,20 +8,30 @@ require (
 	github.com/gogo/protobuf v1.1.2-0.20180914054005-e14cafb6a2c2
 	github.com/gorilla/websocket v1.0.1-0.20161018003955-8003df83eef3
 	github.com/graphql-go/graphql v0.4.19-0.20160928141709-8c317402d1b7
-	github.com/juju/testing v1.0.2 // indirect
-	github.com/kr/pretty v0.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0
-	github.com/ngaut/log v0.0.0-20160810023011-cec23d3e10b0 // indirect
-	github.com/pingcap/check v0.0.0-20211026125417-57bd13f7b5f0 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rakyll/statik v0.1.5
 	github.com/samsarahq/go v0.0.0-20181026175739-13570df44b46
 	github.com/satori/go.uuid v0.0.0-20160218235746-e673fdd4dea8
-	github.com/siddontang/go v0.0.0-20161005110831-1e9ce2a5ac40 // indirect
 	github.com/siddontang/go-mysql v0.0.0-20160925014134-d8e777f00cdb
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/net v0.0.0-20211216030914-fe4d6282115f
 	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 	golang.org/x/tools v0.0.0-20191119224855-298f0cb1881e
 	google.golang.org/grpc v1.35.0
+)
+
+require (
+	github.com/golang/protobuf v1.4.2 // indirect
+	github.com/juju/errors v0.0.0-20220203013757-bd733f3c86b9 // indirect
+	github.com/juju/testing v1.0.2 // indirect
+	github.com/kr/pretty v0.3.0 // indirect
+	github.com/ngaut/log v0.0.0-20160810023011-cec23d3e10b0 // indirect
+	github.com/pingcap/check v0.0.0-20211026125417-57bd13f7b5f0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/siddontang/go v0.0.0-20161005110831-1e9ce2a5ac40 // indirect
+	golang.org/x/sys v0.0.0-20210423082822-04245dca01da // indirect
+	golang.org/x/text v0.3.6 // indirect
+	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
+	google.golang.org/protobuf v1.25.0 // indirect
+	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )

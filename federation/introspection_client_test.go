@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/samsarahq/go/snapshotter"
-	"github.com/samsarahq/thunder/graphql/introspection"
+	"github.com/hiett/lightning/graphql/introspection"
 	"github.com/stretchr/testify/assert"
 )
 

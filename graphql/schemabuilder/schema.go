@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/samsarahq/go/oops"
-	"github.com/samsarahq/thunder/graphql"
+	"github.com/hiett/lightning/graphql"
 )
 
 const federationField = "_federation"
@@ -242,6 +242,11 @@ func checkTypeNameUniqueness(typ reflect.Type, typesToPackages map[string]string
 
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
+		// Unexported fields never become schema fields, so their types are not
+		// part of the schema and must not participate in name uniqueness.
+		if field.PkgPath != "" {
+			continue
+		}
 		if err := checkTypeNameUniqueness(field.Type, typesToPackages); err != nil {
 			return err
 		}

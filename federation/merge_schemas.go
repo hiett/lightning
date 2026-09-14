@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/introspection"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/introspection"
 )
 
 // MergeMode controls how to combine two different schemas. Union is used for

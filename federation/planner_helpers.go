@@ -3,7 +3,7 @@ package federation
 import (
 	"sort"
 
-	"github.com/samsarahq/thunder/graphql"
+	"github.com/hiett/lightning/graphql"
 )
 
 /*

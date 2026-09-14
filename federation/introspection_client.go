@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/introspection"
-	"github.com/samsarahq/thunder/graphql/schemabuilder"
+	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/introspection"
+	"github.com/hiett/lightning/graphql/schemabuilder"
 )
 
 const IntrospectionClientName = "introspectionclient"
