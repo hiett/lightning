@@ -11,13 +11,17 @@ payloads, and hands Relay a complete `GraphQLResponse` every time.
 - One websocket for queries, mutations and live queries.
 - Reconnects with jittered exponential backoff and replays every subscription.
 - Application-level heartbeat, because the server sets no read deadline.
-- No runtime dependencies beyond `relay-runtime` and `graphql`.
+- No runtime dependencies beyond `relay-runtime`.
 
 ## Install
 
 ```sh
-npm install @hiett/lightning-relay relay-runtime graphql
+npm install @hiett/lightning-relay relay-runtime
 ```
+
+`@types/relay-runtime` comes along as a dependency rather than a peer, because
+this package's own `.d.ts` files refer to those types and `relay-runtime` ships
+Flow types and no TypeScript ones.
 
 ## Quick start
 
@@ -51,7 +55,8 @@ import { LightningConnection, createLightningNetwork } from "@hiett/lightning-re
 const connection = new LightningConnection({ url: "wss://api.example.com/graphql" });
 const network = createLightningNetwork({ connection });
 
-// on sign-out
+// on sign-out. Every subscription ends with an error, and in-flight mutations
+// reject; see "Behaviour worth knowing".
 connection.close();
 ```
 
@@ -187,10 +192,15 @@ connection directly:
 ```ts
 import { LightningConnection, merge, stripKeys, type MergeValue } from "@hiett/lightning-relay";
 
+const connection = new LightningConnection({ url: "wss://api.example.com/graphql" });
+
 let payload: MergeValue;
 const handle = connection.subscribe(
   { query: "query UsersQuery { users { id name } }", variables: {} },
   {
+    // onReset runs before every (re)subscribe, and runs synchronously from
+    // subscribe() itself when the socket is already open, so declare whatever
+    // it clears above the call.
     onReset: () => { payload = undefined; },
     onUpdate: (diff) => {
       payload = merge(payload, diff);
@@ -200,6 +210,7 @@ const handle = connection.subscribe(
   },
 );
 
+// later
 handle.dispose();
 ```
 
@@ -216,6 +227,26 @@ arrived from one whose reply was lost, so replaying it across a reconnect risks
 applying it twice. Retrying is left to the caller, who knows whether the
 operation is safe to repeat. Queries and subscriptions have no such problem and
 are replayed automatically.
+
+**A query waits for a socket, but not for ever.** A query issued while the
+connection is down is held and sent on whatever socket opens next, which is what
+makes a reconnect invisible to a screen that is merely loading. Past
+`queryTimeoutMs` (default 30s) it gives up and rejects with
+`lightning: query timed out`, because a promise that never settles gives Relay
+nothing at all to render -- not even a failure.
+
+**`close()` is terminal for the work in flight.** In-flight mutations reject and
+every subscription ends through its `onError` with `lightning: connection
+closed`. A later `connect()` opens a fresh socket for new operations; it does
+not bring back the subscriptions `close()` ended, and `subscribe()` throws in
+between. The alternative -- dropping them quietly, which is what this used to do
+-- leaves each caller holding a handle to something that will never produce
+another value and never say why.
+
+**File uploads are not supported.** There is no multipart request to attach
+files to, only a JSON text frame, so `commitMutation({uploadables})` rejects
+rather than sending the mutation with the files silently missing. Upload out of
+band and pass the result as a variable.
 
 **A reconnect starts every subscription over.** The server keeps no session and
 there are no resume tokens: the client is the only record of what is subscribed.
@@ -244,8 +275,8 @@ report a transient resolver failure.
 | Option | Default | |
 | --- | --- | --- |
 | `url` | -- | Server URL. One of `url` or `connect` is required. |
-| `connect` | -- | `() => WebSocket \| Promise<WebSocket>`. Takes precedence over `url`. |
-| `webSocketImpl` | global `WebSocket` | For Node, or for tests. |
+| `connect` | -- | `() => WebSocketLike \| Promise<WebSocketLike>`. Takes precedence over `url`. |
+| `webSocketImpl` | global `WebSocket` | A `new (url) => WebSocketLike`, for Node or for tests. |
 | `connection` | -- | An existing `LightningConnection` to run on. |
 | `connectionTimeoutMs` | 30000 | Covers `connect` and the socket opening. |
 | `pingIntervalMs` | 30000 | Delay between a heartbeat reply and the next. |
@@ -253,13 +284,24 @@ report a transient resolver failure.
 | `initialReconnectDelayMs` | 1000 | Doubles per failed attempt, then jittered. |
 | `maxReconnectDelayMs` | 30000 | Ceiling for the reconnect delay. |
 | `mutationTimeoutMs` | 10000 | How long a mutation waits for its reply. |
+| `queryTimeoutMs` | 30000 | How long a query waits for its first payload. |
 | `extensions` | -- | Opaque values sent with every operation; may be a function. |
 | `autoConnect` | `true` | Set `false` for SSR or tests. |
 | `logger` | -- | `{ warn(message, detail?) }`. |
 
-A socket that delivered at least one message reconnects immediately, on the
-assumption that it was a network blip. One that never produced anything is
-backed off, on the assumption that the server is refusing us.
+`WebSocketLike` is the three members this package actually uses --
+`readyState`, `send`, `close` -- plus the four handler properties it assigns.
+Anything with those works, which is what lets the DOM's `WebSocket` and Node's
+`ws` both be passed without their mutually incompatible event types getting in
+the way.
+
+A connection that stood up for at least ten seconds and then dropped is treated
+as a network blip and retried immediately. Anything else -- a refused upgrade, a
+bad token, a server that accepts the socket and hangs up on it -- is treated as
+a refusal and backed off. A single immediate retry is all a blip ever buys: the
+retry that follows it is backed off unless the connection in between also lasted
+those ten seconds, so a flapping server climbs the same curve as one that never
+answers at all.
 
 ## The diff format
 
@@ -294,8 +336,10 @@ merge(["a", "b", "c", "d"], { $: [[1, 3], -1], "3": "e" });
 // => ["b", "c", "d", "e"]
 ```
 
-`merge` never mutates its arguments, shares the subtrees a diff did not touch,
-and freezes what it returns.
+`merge` never mutates its arguments -- not even by freezing them -- shares the
+subtrees of the previous value that a diff did not touch, and freezes what it
+returns. A value taken out of a diff is copied on the way in, so nothing it
+returns aliases the message you handed it.
 
 ## Development
 
@@ -309,4 +353,10 @@ npm run build
 The merge test suite asserts against diffs generated by the Go differ itself
 (`diff.Diff`), including every example in `diff/diff.go`'s package
 documentation, so it tests the bytes a real server emits rather than a reading
-of the spec.
+of the spec. The connection and network suites run on a websocket the test
+drives by hand (`src/testing/fakeWebSocket.ts`) and on fake timers, so backoff,
+the heartbeat and the reconnect-and-replay sequence are asserted rather than
+waited for.
+
+`npm run typecheck` checks the tests too; `npm run build` is the only step that
+excludes them, so nothing untested ends up in `dist`.

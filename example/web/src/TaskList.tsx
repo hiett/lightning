@@ -24,6 +24,11 @@ const listFragment = graphql`
   @argumentDefinitions(count: { type: "Int", defaultValue: 3 }, cursor: { type: "String" })
   @refetchable(queryName: "TaskListPaginationQuery") {
     tasks(first: $count, after: $cursor) @connection(key: "TaskList_tasks") {
+      # __id is Relay's own identifier for the connection record. It is a
+      # client-side field — relay-compiler strips it from the query it sends —
+      # and it is what @appendNode needs to know which connection to splice
+      # into.
+      __id
       totalCount
       edges {
         cursor
@@ -83,6 +88,11 @@ function Tasks({ query, viewerId }: { query: TaskList_query$key; viewerId: strin
           addTask({
             variables: { title, ownerId: viewerId, connections: [connectionId] },
             onCompleted: () => setTitle(""),
+            onError: (error) => {
+              // Surfacing the failure beats an input that silently does
+              // nothing; a real application would show it properly.
+              console.error("addTask failed", error);
+            },
           });
         }}
       >

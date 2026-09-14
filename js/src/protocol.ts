@@ -144,10 +144,15 @@ export function parseServerEnvelope(data: unknown): ServerEnvelope | undefined {
       return {
         type: envelope.type,
         id: envelope.id,
-        // An `update` whose diff is empty is sent as {} and an omitted message
-        // is indistinguishable from it here; both mean "nothing changed", and
-        // merging {} is a no-op, so undefined becomes {}.
-        message: (envelope.message ?? {}) as JsonValue,
+        // An omitted message means "nothing changed": the server's envelope
+        // drops a nil message rather than encoding it, and merging {} is a
+        // no-op. A message that is present and null is a different frame and
+        // stays one -- a bare null is the diff format's scalar replacement, so
+        // collapsing it to {} would turn "this became null" into "nothing
+        // happened".
+        message: hasOwn(envelope, "message")
+          ? (envelope.message as JsonValue)
+          : {},
         metadata,
       };
 
@@ -165,4 +170,8 @@ export function parseServerEnvelope(data: unknown): ServerEnvelope | undefined {
     default:
       return undefined;
   }
+}
+
+function hasOwn(object: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key);
 }

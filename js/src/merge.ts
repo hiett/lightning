@@ -65,9 +65,10 @@ const REORDER_KEY = "$";
  *
  * `original` is the accumulated payload (`undefined` before the first one), and
  * `update` is the `message` of an `update` or `result` envelope. The result is
- * a new value; `original` is never mutated, and unchanged subtrees are shared
- * with it rather than copied, which is what keeps a small diff on a long list
- * cheap to apply.
+ * a new frozen value. Neither argument is mutated -- not even by being frozen
+ * -- and unchanged subtrees are shared with `original` rather than copied,
+ * which is what keeps a small diff on a long list cheap to apply. Nothing is
+ * ever shared with `update`, which stays the caller's to do as it likes with.
  */
 export function merge(original: MergeValue, update: JsonValue): MergeValue {
   if (Array.isArray(update)) {
@@ -76,18 +77,35 @@ export function merge(original: MergeValue, update: JsonValue): MergeValue {
 
   if (update === null || typeof update !== "object") {
     // Scalar replacement. Note that a field *becoming* null is encoded as the
-    // 1-element array [null] and handled above; a bare null only arrives
-    // through the raw-new-field path described in mergeReplacement.
+    // 1-element array [null] and handled above, so the differ never writes a
+    // bare null into a diff at all: one reaches here only as the whole message
+    // of an envelope that carried one, where reading it literally is right
+    // anyway.
     return update;
   }
 
   // `update` is a diff object, so it is either an array diff or a recursive
-  // field-by-field diff. "$" settles it when the previous value is not an array
-  // -- which happens when a field's value has only just appeared. GraphQL field
-  // names cannot contain "$", so a field-by-field diff can never carry that key
-  // and the discriminator is unambiguous.
-  if (Array.isArray(original) || hasOwn(update, REORDER_KEY)) {
-    return mergeArray(Array.isArray(original) ? original : [], update);
+  // field-by-field diff, and the previous value decides which.
+  if (Array.isArray(original)) {
+    return mergeArray(original, update);
+  }
+
+  // An object previous value decides it too, and has to be allowed to: the
+  // server computes a reordering only for an array, so a "$" arriving against
+  // an object is an ordinary field with that name. A selection set cannot
+  // produce one -- GraphQL names have no "$" -- but a JSON-valued custom scalar
+  // can, and diffMap will happily emit {"$": 2} for it. Reading that as a
+  // reordering throws the whole object away.
+  if (isPlainObject(original)) {
+    return mergeMap(original, update);
+  }
+
+  // No previous value to go on, so "$" is the only signal left. A current
+  // server does not get here: a field that has only just appeared is wrapped as
+  // a replacement, and so never arrives as a bare diff object. An array slot a
+  // reordering left unfilled can still be undefined here.
+  if (hasOwn(update, REORDER_KEY)) {
+    return mergeArray([], update);
   }
 
   return mergeMap(original, update);
@@ -101,13 +119,7 @@ function mergeReplacement(update: JsonValue[]): MergeValue {
     // Complex replacement. The value is already fully materialized by the
     // server, so it replaces the previous subtree outright -- recursing into it
     // would be wrong, not merely wasteful.
-    const value = update[0];
-    if (typeof value === "object" && value !== null) {
-      // Frozen in place rather than through Object.freeze's return value, whose
-      // Readonly<T> is not the same type going back out.
-      Object.freeze(value);
-    }
-    return value;
+    return copyValue(update[0]);
   }
 
   if (update.length === 0) {
@@ -118,22 +130,51 @@ function mergeReplacement(update: JsonValue[]): MergeValue {
     return undefined;
   }
 
-  // Unreachable against a correct server: a replacement is always wrapped in a
+  // Unreachable against a current server: a replacement is always wrapped in a
   // 1-element array, so a diff node is never a longer array.
   //
-  // It is reachable against the current one. diff/diff.go writes a field that
-  // is new since the last execution into the diff raw -- neither wrapped nor
-  // key-stripped -- so a field appearing for the first time whose value is an
-  // array arrives here verbatim. Reading it literally is the only interpretation
-  // that can be correct; the reference client took update[0] and silently
-  // dropped the rest, which turned {"friends": ["bob", "charlie"]} into
-  // friends: "bob".
-  //
-  // The same server bug makes a brand-new field holding a *1-element* array
-  // indistinguishable from a replacement, and one holding an empty array
-  // indistinguishable from a deletion. Those two cannot be repaired here; they
-  // have to be fixed by wrapping the value server-side.
-  return update;
+  // It was reachable until diff/diff.go was fixed to wrap a field that is new
+  // since the last execution. Before that, a new field holding an array arrived
+  // raw: a longer one landed here, and -- worse, because they were silent --
+  // one holding [v] was unwrapped to v and one holding [] was read as a
+  // deletion. Only the first of those three could be repaired on this side, so
+  // the server was fixed; reading a longer array literally is kept because it
+  // is the only interpretation that can be right, and it cannot misfire against
+  // a server that wraps properly.
+  return copyValue(update);
+}
+
+/**
+ * Copies a complete value out of a diff and into the accumulated payload,
+ * freezing as it goes.
+ *
+ * It cannot be frozen where it lies. The value belongs to the caller's message,
+ * which merge() promises not to touch, and freezing is a mutation -- a silent
+ * one that a caller reusing or editing its own message would discover much
+ * later and somewhere else. Nor can it be adopted as it is: the accumulated
+ * payload would then alias data the caller is still free to change underneath
+ * it, and every later diff would be applied to whatever it had become.
+ */
+function copyValue(value: MergeValue): MergeValue {
+  if (Array.isArray(value)) {
+    const copy: MergeValue[] = [];
+    for (const item of value) {
+      copy.push(copyValue(item));
+    }
+    Object.freeze(copy);
+    return copy;
+  }
+
+  if (isPlainObject(value)) {
+    const copy: { [key: string]: MergeValue } = {};
+    for (const key of Object.keys(value)) {
+      defineField(copy, key, copyValue(value[key]));
+    }
+    Object.freeze(copy);
+    return copy;
+  }
+
+  return value;
 }
 
 /**
@@ -157,6 +198,15 @@ function mergeArray(
           if (typeof start === "number" && typeof length === "number") {
             for (let i = start; i < start + length; i++) {
               merged.push(original[i]);
+            }
+          } else {
+            // A malformed run still stands for slots, and the index keys below
+            // address slots. Pushing nothing would slide every later element
+            // down by the width of the run, turning one unreadable entry into a
+            // wrong array; holes keep everything after it lined up.
+            const slots = typeof length === "number" && length > 0 ? length : 1;
+            for (let i = 0; i < slots; i++) {
+              merged.push(undefined);
             }
           }
         } else if (typeof entry === "number" && entry >= 0) {
@@ -188,8 +238,12 @@ function mergeArray(
       continue;
     }
 
+    // Number() is far more generous than the key spelling the server emits:
+    // "", " 1", "0x2" and "1e3" are all numbers to it, and any of them would
+    // write to a slot nobody addressed. Requiring the key to be the canonical
+    // decimal spelling of its own value is what makes this exactly strconv.Itoa.
     const index = Number(key);
-    if (!Number.isInteger(index) || index < 0) {
+    if (!Number.isInteger(index) || index < 0 || String(index) !== key) {
       continue;
     }
 
@@ -221,7 +275,12 @@ function mergeMap(original: MergeValue, update: JsonObject): MergeValue {
     if (Array.isArray(value) && value.length === 0) {
       delete merged[key];
     } else {
-      defineField(merged, key, merge(merged[key], value));
+      // Read as an own property. A diff may name a field the prototype also
+      // has -- "toString", "constructor" -- and plain indexing would hand the
+      // inherited function to merge() as the previous value of a field that in
+      // fact has none.
+      const previous = hasOwn(merged, key) ? merged[key] : undefined;
+      defineField(merged, key, merge(previous, value));
     }
   }
 
@@ -270,7 +329,7 @@ function isPlainObject(
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function hasOwn(object: JsonObject, key: string): boolean {
+function hasOwn(object: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(object, key);
 }
 

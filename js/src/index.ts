@@ -7,13 +7,18 @@
  * what turns a stream of diffs back into payloads.
  */
 
-export { createLightningNetwork } from "./network.js";
+export {
+  createLightningNetwork,
+  ERROR_QUERY_TIMEOUT,
+  ERROR_UPLOADABLES,
+} from "./network.js";
 export type { LightningNetworkOptions } from "./network.js";
 
 export {
   LightningConnection,
   LightningConnectionError,
   LightningServerError,
+  ERROR_CLOSED,
   ERROR_MUTATION_TIMEOUT,
   ERROR_NOT_CONNECTED,
 } from "./connection.js";

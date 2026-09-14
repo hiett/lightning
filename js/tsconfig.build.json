@@ -1,0 +1,9 @@
+{
+  // What `npm run build` emits. The root config is what `npm run typecheck`
+  // uses, and it deliberately has no exclusions: a test file that does not
+  // compile is a test file that is not testing what it claims to. Tests are
+  // dropped here instead, at the one step where they would otherwise end up in
+  // dist and in the published package.
+  "extends": "./tsconfig.json",
+  "exclude": ["src/**/*.test.ts", "src/testing"]
+}

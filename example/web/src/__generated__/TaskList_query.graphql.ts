@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<900c993c2107c3c7e8a8fede8a90e4fe>>
+ * @generated SignedSource<<0446f7eeb1da2e64741c23bab7ca69cd>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -12,6 +12,7 @@ import { ReaderFragment } from 'relay-runtime';
 import { FragmentRefs } from "relay-runtime";
 export type TaskList_query$data = {
   readonly tasks: {
+    readonly __id: string;
     readonly edges: ReadonlyArray<{
       readonly cursor: string;
       readonly node: {
@@ -159,6 +160,18 @@ return {
             }
           ],
           "storageKey": null
+        },
+        {
+          "kind": "ClientExtension",
+          "selections": [
+            {
+              "alias": null,
+              "args": null,
+              "kind": "ScalarField",
+              "name": "__id",
+              "storageKey": null
+            }
+          ]
         }
       ],
       "storageKey": null
@@ -169,6 +182,6 @@ return {
 };
 })();
 
-(node as any).hash = "deaf676b908881d59aef8dace0b47e77";
+(node as any).hash = "e252c7c27728c4fde2491b251f844827";
 
 export default node;

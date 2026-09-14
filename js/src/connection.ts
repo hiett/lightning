@@ -5,8 +5,8 @@
  * This layer knows the protocol and nothing about Relay or about diffs. It
  * hands the diff messages it receives to the caller untouched.
  *
- * Two policies here are deliberate and worth stating up front, because both
- * look like omissions:
+ * Three policies here are deliberate and worth stating up front, because all
+ * three look like omissions:
  *
  *  - There is no outbound queue. A frame sent while the socket is down is
  *    dropped, not buffered. Subscriptions do not need a queue because they are
@@ -18,21 +18,37 @@
  *    scratch and the server's first update on each is a complete snapshot.
  *    That is why a reconnect has to reset the caller's accumulated payload --
  *    a diff is meaningless against a value the server no longer remembers.
+ *
+ *  - close() is terminal for the work in flight. Every subscription ends with
+ *    an error and every in-flight mutation rejects, rather than being dropped
+ *    quietly or held for a reconnect that may never come. The object itself is
+ *    reusable: connect() opens a fresh socket for new operations, and does not
+ *    resurrect what close() ended.
  */
 
 import type { JsonValue } from "./merge.js";
 import type { ClientEnvelope, OperationMessage } from "./protocol.js";
 import { parseServerEnvelope } from "./protocol.js";
 
-/** WebSocket.OPEN. Spelled out so no DOM global is required at runtime. */
+/** WebSocket ready states. Spelled out so no DOM global is required at runtime. */
 const WS_OPEN = 1;
+const WS_CLOSING = 2;
+const WS_CLOSED = 3;
+
+/**
+ * How long a socket has to stay open before its loss counts as a blip rather
+ * than a refusal. See #scheduleReconnect.
+ */
+const HEALTHY_CONNECTION_MS = 10_000;
 
 export const ERROR_NOT_CONNECTED = "lightning: not connected";
 export const ERROR_MUTATION_TIMEOUT = "lightning: mutation timed out";
+export const ERROR_CLOSED = "lightning: connection closed";
 
 const REASON_CONNECT_TIMEOUT = "connection timeout";
 const REASON_PING_TIMEOUT = "ping timeout";
 const REASON_CLOSE_CALLED = "close called";
+const REASON_SOCKET_DEAD = "socket closed while connecting";
 
 /** An error reported by the server in an `error` envelope. */
 export class LightningServerError extends Error {
@@ -116,7 +132,11 @@ export interface SubscriptionHandlers {
   onReset(): void;
   /** A diff for this subscription. Apply it with merge(). */
   onUpdate(message: JsonValue): void;
-  /** Terminal. The server has already ended this subscription on its side. */
+  /**
+   * Terminal. Either the server ended this subscription on its side, or
+   * {@link LightningConnection.close} ended it on ours. Nothing further arrives
+   * for it, and a reconnect does not replay it.
+   */
   onError(error: Error): void;
 }
 
@@ -186,8 +206,8 @@ export class LightningConnection {
 
   #nextRequestId = 0;
   #reconnectAttempt = 0;
-  /** Whether the current socket ever delivered a message. */
-  #hadSuccess = false;
+  /** When the current socket reached its open event, if it ever did. */
+  #openedAtMs: number | undefined;
 
   #connectTimer: ReturnType<typeof setTimeout> | undefined;
   #sendPingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -214,38 +234,76 @@ export class LightningConnection {
     return this.#status;
   }
 
-  /** Opens the socket, and reopens one closed by {@link close}. */
+  /**
+   * Opens the socket, and reopens one closed by {@link close}.
+   *
+   * It does not bring back the subscriptions close() ended: those were reported
+   * as over, and a subscriber that has been told so has already let go. New
+   * subscriptions run on the new socket as they always did.
+   */
   connect(): void {
     this.#closed = false;
     if (this.#status === "closed") {
       this.#status = "idle";
     }
+    // A reopen is a fresh start, not the continuation of whatever run of
+    // failures preceded the close.
+    this.#reconnectAttempt = 0;
     this.#maybeConnect();
   }
 
   /**
-   * Closes the socket and stops reconnecting.
+   * Closes the socket, ends every subscription, and stops reconnecting.
    *
-   * In-flight mutations reject. Subscriptions are dropped without being
-   * notified: a caller that tore the connection down is not waiting to be told.
+   * This is terminal for the work in flight. In-flight mutations reject and
+   * every subscription is ended through its onError, because the alternative --
+   * dropping them quietly, as this used to -- leaves each caller holding a
+   * handle to something that will never produce another value and never say
+   * why, and a later connect() would not bring any of them back. Telling them
+   * is what lets a caller resubscribe if it wants to.
    */
   close(): void {
     this.#closed = true;
     this.#shutdownSocket(REASON_CLOSE_CALLED);
     this.#status = "closed";
+
+    // Drained before anyone is told: a handler is free to dispose its handle or
+    // to subscribe again, and neither may run against a map still being walked.
+    const ended = [...this.#subscriptions.values()];
     this.#subscriptions.clear();
+
+    const error = new LightningConnectionError(
+      `${ERROR_CLOSED} (${REASON_CLOSE_CALLED})`,
+    );
+    for (const subscription of ended) {
+      this.#safely("onError", () => {
+        subscription.handlers.onError(error);
+      });
+    }
   }
 
   /**
    * Starts a subscription and keeps it alive across reconnects.
    *
-   * The handlers are never called before this returns: all three are driven by
-   * socket messages.
+   * onReset can run synchronously from here, before the handle exists, when the
+   * socket is already open: the caller's accumulated payload has to be cleared
+   * before the snapshot answering this subscribe can arrive, and deferring it
+   * would open a window in which a diff is applied to a value the server has
+   * already forgotten. onUpdate and onError are only ever driven by socket
+   * messages, so neither can run before this returns -- which is what makes it
+   * safe for those two, and only those two, to close over the handle.
+   *
+   * Throws if the connection has been closed. Reporting that through onError
+   * would mean calling a handler before the handle it wants to dispose exists.
    */
   subscribe(
     request: OperationMessage,
     handlers: SubscriptionHandlers,
   ): SubscriptionHandle {
+    if (this.#closed) {
+      throw new LightningConnectionError(ERROR_CLOSED);
+    }
+
     const id = this.#makeId();
     const subscription: ActiveSubscription = { request, handlers };
     this.#subscriptions.set(id, subscription);
@@ -347,6 +405,15 @@ export class LightningConnection {
 
     this.#socket = socket;
 
+    if (socket.readyState === WS_CLOSING || socket.readyState === WS_CLOSED) {
+      // The socket died while the connect function was still in flight, so its
+      // error and close events fired before anything was listening for them.
+      // Attaching handlers now and waiting would buy nothing but the whole
+      // connection timeout, spent waiting for an event that has already been.
+      this.#fail(epoch, REASON_SOCKET_DEAD);
+      return;
+    }
+
     const events = socket as unknown as SocketEventHandlers;
     events.onopen = () => {
       if (epoch === this.#epoch) {
@@ -377,11 +444,17 @@ export class LightningConnection {
       return;
     }
     this.#status = "open";
+    this.#openedAtMs = Date.now();
     this.#clearConnectTimer();
     this.#schedulePing();
 
     for (const [id, subscription] of this.#subscriptions) {
-      this.#sendSubscribe(id, subscription);
+      // Guarded one by one. onReset is caller-supplied code, and a throw from
+      // one subscription's must not take the rest of the replay down with it,
+      // leaving them registered, silent and never sent again.
+      this.#safely("resubscribe", () => {
+        this.#sendSubscribe(id, subscription);
+      });
     }
   }
 
@@ -402,11 +475,6 @@ export class LightningConnection {
   // --- receiving --------------------------------------------------------
 
   #handleMessage(data: unknown): void {
-    // Any frame proves the socket works, which is what distinguishes a blip
-    // from a server that refuses us. See #scheduleReconnect.
-    this.#hadSuccess = true;
-    this.#reconnectAttempt = 0;
-
     const envelope = parseServerEnvelope(data);
     if (envelope === undefined) {
       this.#logger?.warn("lightning: unrecognized frame", data);
@@ -507,8 +575,13 @@ export class LightningConnection {
    * always talking about the socket that is current now.
    */
   #failCurrent(reason: string): void {
+    // Read before the shutdown clears it.
+    const wasHealthy =
+      this.#openedAtMs !== undefined &&
+      Date.now() - this.#openedAtMs >= HEALTHY_CONNECTION_MS;
+
     this.#shutdownSocket(reason);
-    this.#scheduleReconnect();
+    this.#scheduleReconnect(wasHealthy);
   }
 
   #shutdownSocket(reason: string): void {
@@ -525,6 +598,7 @@ export class LightningConnection {
     const socket = this.#socket;
     this.#socket = undefined;
     this.#status = "idle";
+    this.#openedAtMs = undefined;
     if (socket !== undefined) {
       closeQuietly(socket);
     }
@@ -545,17 +619,29 @@ export class LightningConnection {
     // Subscriptions are intentionally kept: they are replayed on the next open.
   }
 
-  #scheduleReconnect(): void {
+  #scheduleReconnect(wasHealthy: boolean): void {
     if (this.#closed) {
       return;
     }
 
-    // A socket that delivered at least one message is treated as a blip and
-    // retried at once. One that never produced anything is treated as a refusal
-    // -- a rejected upgrade, a bad token, a server that is down -- and backed
-    // off, so a failing server does not get hammered.
-    const delay = this.#hadSuccess ? 0 : this.#backoffDelay();
-    this.#hadSuccess = false;
+    // A connection that stood up for a while and then dropped is treated as a
+    // blip and retried at once, because making an application wait out a
+    // backoff after a momentary loss of network is an outage for nothing.
+    // Anything else is treated as a refusal -- a rejected upgrade, a bad token,
+    // a server that is down, or one that accepts the socket and hangs up on it
+    // -- and backed off.
+    //
+    // What bounds this is resetting the attempt counter rather than stepping
+    // around it: an immediate retry is followed by another only if the
+    // connection in between also lasted HEALTHY_CONNECTION_MS, so a server that
+    // flaps climbs the same backoff curve as one that never connects at all. An
+    // earlier version keyed this off "did any frame ever arrive", which a
+    // server that greets you and immediately closes satisfies every time --
+    // hundreds of connection attempts a second, forever.
+    if (wasHealthy) {
+      this.#reconnectAttempt = 0;
+    }
+    const delay = wasHealthy ? 0 : this.#backoffDelay();
     this.#status = "reconnecting";
 
     this.#reconnectTimer = setTimeout(() => {
@@ -613,7 +699,34 @@ export class LightningConnection {
 
   #extensions(): Record<string, unknown> | undefined {
     const extensions = this.#extensionsOption;
-    return typeof extensions === "function" ? extensions() : extensions;
+    if (typeof extensions !== "function") {
+      return extensions;
+    }
+
+    try {
+      return extensions();
+    } catch (error) {
+      // The operation still goes out, without them. A server that needs these
+      // values rejects it, and that reaches the caller as an error it can act
+      // on; holding the frame back instead would leave the subscription
+      // registered and permanently silent, with nothing to report it.
+      this.#logger?.warn("lightning: extensions() threw", error);
+      return undefined;
+    }
+  }
+
+  /**
+   * Runs a caller-supplied handler without letting it take the connection with
+   * it. A handler that throws is the caller's bug, but these are reached from
+   * loops over every subscription, where one bad handler would otherwise strand
+   * all the ones after it.
+   */
+  #safely(what: string, run: () => void): void {
+    try {
+      run();
+    } catch (error) {
+      this.#logger?.warn(`lightning: ${what} threw`, error);
+    }
   }
 
   #makeId(): string {

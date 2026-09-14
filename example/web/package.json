@@ -8,7 +8,8 @@
     "relay:check": "relay-compiler --validate",
     "typecheck": "tsc --noEmit",
     "dev": "vite",
-    "build": "relay-compiler && tsc --noEmit && vite build"
+    "build": "relay-compiler && tsc --noEmit && vite build",
+    "e2e": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -17,14 +18,19 @@
     "relay-runtime": "^18.2.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/react-relay": "^18.2.0",
     "@types/relay-runtime": "^18.2.0",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.4",
     "babel-plugin-relay": "^18.2.0",
+    "jsdom": "^25.0.1",
     "relay-compiler": "^18.2.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "^2.1.9",
+    "ws": "^8.21.3"
   }
 }

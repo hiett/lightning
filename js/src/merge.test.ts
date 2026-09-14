@@ -20,14 +20,13 @@ const groundTruth: ReadonlyArray<{
   {
     name: "doc: map example",
     previous: { address: { city: "sf", state: "ca" }, age: 30, name: "bob" },
-    // Note `friends`, a field that did not exist before: the server writes new
-    // fields into the diff raw instead of wrapping them as a replacement, so
-    // this arrives as a bare 2-element array. The package doc shows it as
-    // [["bob", "charlie"]]; the code emits what is here.
+    // Note `friends`, a field that did not exist before: a new field is a
+    // replacement like any other, so the array is wrapped and arrives as
+    // [["bob", "charlie"]] rather than bare.
     diff: {
       address: { city: "oakland" },
       age: [],
-      friends: ["bob", "charlie"],
+      friends: [["bob", "charlie"]],
       name: "alice",
     },
     next: {
@@ -169,6 +168,72 @@ const groundTruth: ReadonlyArray<{
     previous: { a: [1, 2] },
     diff: { a: "x" },
     next: { a: "x" },
+  },
+  // A field that did not exist in the previous execution is wrapped by
+  // markReplaced like every other replacement. Unwrapped, the four cases below
+  // would be read as a deletion, a 1-element replacement, a literal array and a
+  // recursive diff respectively -- three of them silently.
+  {
+    name: "new field: empty array",
+    previous: { a: 1 },
+    diff: { b: [[]] },
+    next: { a: 1, b: [] },
+  },
+  {
+    name: "new field: one-element array",
+    previous: { a: 1 },
+    diff: { b: [["x"]] },
+    next: { a: 1, b: ["x"] },
+  },
+  {
+    name: "new field: longer array",
+    previous: { a: 1 },
+    diff: { b: [["x", "y"]] },
+    next: { a: 1, b: ["x", "y"] },
+  },
+  {
+    name: "new field: object",
+    previous: { a: 1 },
+    diff: { b: [{ c: 2 }] },
+    next: { a: 1, b: { c: 2 } },
+  },
+  {
+    name: "new field: null",
+    previous: { a: 1 },
+    diff: { b: [null] },
+    next: { a: 1, b: null },
+  },
+  {
+    name: "new field: scalar stays bare",
+    previous: { a: 1 },
+    diff: { b: "x" },
+    next: { a: 1, b: "x" },
+  },
+  {
+    name: "new field: keyed object, key stripped by the server",
+    previous: { a: 1 },
+    diff: { b: [{ c: 2 }] },
+    next: { a: 1, b: { __key: 7, c: 2 } },
+  },
+  {
+    name: "new field: nested one execution down",
+    previous: { u: { n: "bob" } },
+    diff: { u: { tags: [["x"]] } },
+    next: { u: { n: "bob", tags: ["x"] } },
+  },
+  {
+    name: "new field: value appearing where there was null",
+    previous: { a: null },
+    diff: { a: [[1, 2]] },
+    next: { a: [1, 2] },
+  },
+  {
+    name: 'object carrying a "$" field',
+    previous: { a: { $: 1, b: 2 } },
+    // A JSON-valued custom scalar can hold a field named "$", which diffMap
+    // diffs like any other. Read as a reordering, this empties the object.
+    diff: { a: { $: 2 } },
+    next: { a: { $: 2, b: 2 } },
   },
   {
     name: "keyed: append carol",
@@ -325,26 +390,15 @@ describe("the examples in diff.go's package documentation", () => {
   };
 
   it("updates a scalar, recurses into a map, deletes a field and adds a complex one", () => {
+    // The diff is the documented one verbatim, which is also what the
+    // implementation emits: `friends` is new since the last execution and is
+    // wrapped as a replacement, so it does not have to be told apart from a
+    // 2-element diff node that cannot exist.
     const merged = merge(docMapPrevious, {
       name: "alice",
       address: { city: "oakland" },
       age: [],
       friends: [["bob", "charlie"]],
-    });
-
-    expect(merged).toEqual(docMapNext);
-  });
-
-  it("reaches the same result from the diff the code actually emits", () => {
-    // The documented diff wraps `friends` as a replacement. The implementation
-    // does not wrap a field that is new since the last execution, so the array
-    // arrives unwrapped -- and has to be read as a value rather than as a
-    // 1-element replacement, or "friends" comes out as the string "bob".
-    const merged = merge(docMapPrevious, {
-      name: "alice",
-      address: { city: "oakland" },
-      age: [],
-      friends: ["bob", "charlie"],
     });
 
     expect(merged).toEqual(docMapNext);
@@ -430,6 +484,25 @@ describe("the reorder field", () => {
   it("survives a source index past the end of the previous array", () => {
     expect(stripKeys(merge(["a"], { $: [5] }))).toEqual([null]);
   });
+
+  it("keeps later slots aligned when a run is malformed", () => {
+    // ["x", 2] is not a run anything can be read out of, but it still stands
+    // for two slots, and the index keys below it address slots. Dropping it
+    // would slide "c" down to index 0 and put the repairs in the wrong places.
+    expect(
+      stripKeys(
+        merge(["a", "b", "c"], { $: [["x", 2], 2], "0": "A", "1": "B" }),
+      ),
+    ).toEqual(["A", "B", "c"]);
+  });
+
+  it("ignores an index key that is not a plain decimal index", () => {
+    // Number("") is 0 and Number("01") is 1, so either would otherwise write
+    // over a slot nobody addressed.
+    expect(stripKeys(merge(["a", "b"], { "": "X" }))).toEqual(["a", "b"]);
+    expect(stripKeys(merge(["a", "b"], { "01": "X" }))).toEqual(["a", "b"]);
+    expect(stripKeys(merge(["a", "b"], { " 1": "X" }))).toEqual(["a", "b"]);
+  });
 });
 
 describe("the four diff encodings", () => {
@@ -470,9 +543,10 @@ describe("the four diff encodings", () => {
   });
 
   it("reads a multi-element array as a literal value", () => {
-    // Only reachable through the server's unwrapped-new-field bug. Taking
-    // element 0 -- what the reference client did -- turns a list into its first
-    // element.
+    // A current server never emits one: every replacement is wrapped, so a diff
+    // node is at most a 1-element array. Kept because reading it literally is
+    // the only interpretation that can be right -- taking element 0, what the
+    // reference client did, turns a list into its first element.
     expect(merge({ a: 1 }, { b: ["x", "y"] })).toEqual({ a: 1, b: ["x", "y"] });
   });
 });
@@ -495,6 +569,34 @@ describe("immutability and sharing", () => {
     merge([{ n: 1 }, { n: 2 }], diff);
 
     expect(diff).toEqual({ $: [1, 0], "1": { n: 2 } });
+  });
+
+  it("does not freeze or adopt a replacement out of the incoming diff", () => {
+    // Freezing where the value lies is cheaper, and it is still a mutation of
+    // the caller's message; keeping the value is cheaper still, and it leaves
+    // the accumulated payload aliasing something the caller can edit.
+    const replacement = { list: [{ n: 1 }] };
+    const diff = { a: [replacement] };
+
+    const merged = merge({ a: 0 }, diff) as { a: { list: { n: number }[] } };
+
+    expect(Object.isFrozen(replacement)).toBe(false);
+    expect(Object.isFrozen(replacement.list[0])).toBe(false);
+    expect(merged.a).not.toBe(replacement);
+    expect(merged.a.list[0]).not.toBe(replacement.list[0]);
+    expect(Object.isFrozen(merged.a.list[0])).toBe(true);
+    expect(merged.a).toEqual(replacement);
+  });
+
+  it("does not read a previous value off the prototype chain", () => {
+    // "__proto__" is not an own field of the value being merged into, but it
+    // reads back as Object.prototype -- an object, which is enough to send an
+    // array diff down the field-by-field path and lose it.
+    const diff = JSON.parse('{"__proto__": {"$": [-1], "0": "a"}}') as JsonValue;
+
+    const merged = merge({}, diff) as Record<string, unknown>;
+
+    expect(merged["__proto__"]).toEqual(["a"]);
   });
 
   it("shares subtrees the diff did not touch", () => {

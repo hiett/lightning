@@ -21,18 +21,19 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --project tsconfig.build.json",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@types/relay-runtime": "^18"
   },
   "peerDependencies": {
-    "graphql": "^16",
     "relay-runtime": "^18"
   },
   "devDependencies": {
     "@types/node": "^22",
-    "@types/relay-runtime": "^18",
-    "graphql": "^16",
     "relay-runtime": "^18",
     "typescript": "^5",
     "vitest": "^2"
