@@ -1,5 +1,10 @@
 # Changelog
 
+> **This is thunder's changelog**, kept because the version history it records is
+> still the history of this code. lightning starts from thunder's final state;
+> what changed in the fork is recorded in `DECISIONS.md`, and summarised in
+> `README.md`.
+
 ## [Unreleased]
 
 ### Added

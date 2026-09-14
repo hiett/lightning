@@ -5,15 +5,8 @@
   "[typescriptreact]": {
     "editor.formatOnSave": true
   },
-  "[javascript]": {
-    "editor.formatOnSave": true
-  },
-  "[javascriptreact]": {
-    "editor.formatOnSave": true
-  },
   "[json]": {
     "editor.formatOnSave": true
   },
-  "prettier.trailingComma": "all",
-  "typescript.tsdk": "./client/node_modules/typescript/lib"
+  "prettier.trailingComma": "all"
 }
