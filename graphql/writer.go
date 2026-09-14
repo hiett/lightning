@@ -21,17 +21,22 @@ func (e *errorRecorder) record(err error) {
 	})
 }
 
+// pathTracker records where in the response a node sits. A segment is a field
+// alias (string) or a list index (int); a nil segment contributes nothing,
+// which is how intermediate nodes that are not addressable in a response path
+// are skipped.
 type pathTracker struct {
-	parent *pathTracker
-	path   string
+	parent  *pathTracker
+	segment interface{}
 }
 
-func (p *pathTracker) getPath() []string {
-	path := make([]string, 0)
+// getPath returns the node's path innermost-first.
+func (p *pathTracker) getPath() []interface{} {
+	path := make([]interface{}, 0)
 	cur := p
 	for cur != nil {
-		if cur.path != "" {
-			path = append(path, cur.path)
+		if cur.segment != nil {
+			path = append(path, cur.segment)
 		}
 		cur = cur.parent
 	}
@@ -40,9 +45,12 @@ func (p *pathTracker) getPath() []string {
 
 // newTopLevelOutputNode creates a top-level object writer, this should be
 // the object writer that starts the graphql query.
-func newTopLevelOutputNode(path string) *outputNode {
+//
+// It contributes no path segment: a response path starts at the root field, not
+// at the operation.
+func newTopLevelOutputNode() *outputNode {
 	return &outputNode{
-		pathTracker: &pathTracker{path: path},
+		pathTracker: &pathTracker{},
 		errRecorder: &errorRecorder{},
 	}
 }
@@ -50,9 +58,9 @@ func newTopLevelOutputNode(path string) *outputNode {
 // newOutputNode creates an object writer as a part of a chain of objects.
 // It keeps track of the path and current parent so we can properly propagate
 // error information up the stack.
-func newOutputNode(parent *outputNode, path string) *outputNode {
+func newOutputNode(parent *outputNode, segment interface{}) *outputNode {
 	return &outputNode{
-		pathTracker: &pathTracker{parent: parent.pathTracker, path: path},
+		pathTracker: &pathTracker{parent: parent.pathTracker, segment: segment},
 		errRecorder: parent.errRecorder,
 	}
 }
@@ -78,7 +86,7 @@ func (o *outputNode) Fail(err error) {
 }
 
 // getPath traverses the parent list to get the current execution path.
-func (o *outputNode) getPath() []string {
+func (o *outputNode) getPath() []interface{} {
 	return o.pathTracker.getPath()
 }
 

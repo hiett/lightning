@@ -1,7 +1,5 @@
 package graphql
 
-import "fmt"
-
 func await(value interface{}) (interface{}, error) {
 	switch value := value.(type) {
 	case *thunk:
@@ -20,7 +18,7 @@ func await(value interface{}) (interface{}, error) {
 		for i, v := range value {
 			v, err := await(v)
 			if err != nil {
-				return nil, nestPathError(fmt.Sprint(i), err)
+				return nil, nestPathError(i, err)
 			}
 			value[i] = v
 		}

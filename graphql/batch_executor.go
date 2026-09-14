@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 
 	"github.com/hiett/lightning/reactive"
 )
@@ -128,7 +127,7 @@ func (e *Executor) Execute(ctx context.Context, typ Type, source interface{}, qu
 	if err != nil {
 		return nil, err
 	}
-	topLevelRespWriter := newTopLevelOutputNode(query.Name)
+	topLevelRespWriter := newTopLevelOutputNode()
 	initialSelectionWorkUnits := make([]*WorkUnit, 0, len(topLevelSelections))
 	writers := make(map[string]*outputNode)
 	for _, selection := range topLevelSelections {
@@ -242,7 +241,7 @@ func executeNonExpensiveWorkUnit(unit *WorkUnit) []*WorkUnit {
 func executeNonBatchWorkUnitWithCaching(src interface{}, dest *outputNode, unit *WorkUnit) []*WorkUnit {
 	var workUnits []*WorkUnit
 	subDestRes, err := reactive.Cache(unit.Ctx, getWorkCacheKey(src, unit.field, unit.selection), func(ctx context.Context) (interface{}, error) {
-		subDest := newOutputNode(dest, "")
+		subDest := newOutputNode(dest, nil)
 		workUnits = executeNonBatchWorkUnit(ctx, src, subDest, unit)
 		return subDest.res, nil
 	})
@@ -360,7 +359,7 @@ func resolveListBatch(ctx context.Context, sources []interface{}, typ *List, sel
 		}
 		respList := make([]interface{}, slice.Len())
 		for i := 0; i < slice.Len(); i++ {
-			writer := newOutputNode(destinations[idx], strconv.Itoa(i))
+			writer := newOutputNode(destinations[idx], i)
 			respList[i] = writer
 			flattenedResps = append(flattenedResps, writer)
 			flattenedSources = append(flattenedSources, slice.Index(i).Interface())

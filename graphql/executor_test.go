@@ -333,8 +333,10 @@ func TestError(t *testing.T) {
 
 	e := testgraphql.NewExecutorWrapper(t)
 	_, err := e.Execute(context.Background(), query, nil, q)
-	if err == nil || err.Error() != "foo.error: test error" {
-		t.Error("expected test error")
+	// The path starts at the root field. An operation name is not part of a
+	// response path.
+	if err == nil || err.Error() != "error: test error" {
+		t.Errorf("expected test error, got %v", err)
 	}
 }
 
@@ -470,7 +472,7 @@ func TestExecutorRuns(t *testing.T) {
 func Test_pathError_Reason(t *testing.T) {
 	type fields struct {
 		inner error
-		path  []string
+		path  []interface{}
 	}
 	tests := []struct {
 		name   string
@@ -481,7 +483,7 @@ func Test_pathError_Reason(t *testing.T) {
 			name: "empty list",
 			fields: fields{
 				inner: nil,
-				path:  []string{},
+				path:  []interface{}{},
 			},
 			want: "",
 		},
@@ -489,9 +491,17 @@ func Test_pathError_Reason(t *testing.T) {
 			name: "non empty list",
 			fields: fields{
 				inner: fmt.Errorf("error"),
-				path:  []string{"a", "b", "c"},
+				path:  []interface{}{"a", "b", "c"},
 			},
 			want: "c.b.a",
+		},
+		{
+			name: "list indices render as numbers",
+			fields: fields{
+				inner: fmt.Errorf("error"),
+				path:  []interface{}{"name", 2, "users"},
+			},
+			want: "users.2.name",
 		},
 	}
 	for _, tt := range tests {

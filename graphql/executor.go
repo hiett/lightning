@@ -6,14 +6,18 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"strconv"
 )
 
+// pathError decorates an error with the response path of the field that raised
+// it. Segments are field aliases (string) and list indices (int), stored
+// innermost-first because the path is built as the error unwinds.
 type pathError struct {
 	inner error
-	path  []string
+	path  []interface{}
 }
 
-func nestPathErrorMulti(path []string, err error) error {
+func nestPathErrorMulti(path []interface{}, err error) error {
 	// Don't nest SanitzedError's, as they are intended for human consumption.
 	if se, ok := err.(SanitizedError); ok {
 		return se
@@ -32,7 +36,7 @@ func nestPathErrorMulti(path []string, err error) error {
 	}
 }
 
-func nestPathError(key string, err error) error {
+func nestPathError(key interface{}, err error) error {
 	// Don't nest SanitzedError's, as they are intended for human consumption.
 	if se, ok := err.(SanitizedError); ok {
 		return se
@@ -47,7 +51,7 @@ func nestPathError(key string, err error) error {
 
 	return &pathError{
 		inner: err,
-		path:  []string{key},
+		path:  []interface{}{key},
 	}
 }
 
@@ -92,7 +96,14 @@ func writePath(pe *pathError, buffer *bytes.Buffer) {
 		if i < len(pe.path)-1 {
 			buffer.WriteString(".")
 		}
-		buffer.WriteString(pe.path[i])
+		switch segment := pe.path[i].(type) {
+		case string:
+			buffer.WriteString(segment)
+		case int:
+			buffer.WriteString(strconv.Itoa(segment))
+		default:
+			fmt.Fprint(buffer, segment)
+		}
 	}
 }
 

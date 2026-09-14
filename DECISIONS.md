@@ -147,3 +147,54 @@ express either.
 `SanitizeError`, so internal errors still become "Internal server error" rather than leaking.
 
 Path accumulation in the executor is finished in Phase 4b.
+
+## D11. Go → GraphQL scalar mapping
+
+Phase 4a. `PLAN.md` asks for these decisions to be recorded.
+
+| Go type | GraphQL scalar | Why |
+|---|---|---|
+| `string` | `String` | |
+| `bool` | `Boolean` | |
+| `int8`, `int16`, `int32`, `uint8`, `uint16` | `Int` | Everything that fits in the specification's 32-bit signed `Int` |
+| `int`, `int64`, `uint`, `uint32`, `uint64` | `Int64` | Too wide for `Int` |
+| `float32`, `float64` | `Float` | |
+| `schemabuilder.ID` | `ID` | New; Phase 6 depends on it |
+| `time.Time` | `Time` | Custom scalar, RFC 3339 |
+| `[]byte` | `Bytes` | Custom scalar, base64. Renamed from `bytes` |
+
+**`Int64` is serialised as a decimal string, not a number.** A GraphQL `Int` is 32-bit, and a JSON
+number loses precision above 2^53 the moment a JavaScript client runs `JSON.parse`, so neither can
+carry a Go `int64` without silently corrupting large values — which `PLAN.md` explicitly forbids.
+On input, `Int64` accepts a string, and also accepts a JSON number when it is exactly an integer;
+`1.5`, or a number that has already lost precision, is rejected rather than truncated.
+
+Two consequences, both deliberate:
+
+- **Go's `int` maps to `Int64`, so `{"age": "5"}` is the wire form of an `Age int` field.** `int` is
+  64 bits on every platform this library targets, and mapping it to `Int` would truncate silently at
+  2^31. A field that genuinely is a small number should be declared `int32`, which maps to `Int` and
+  stays a JSON number.
+- **`uint64` above `math.MaxInt64` now survives.** The old `uint64` argument parser converted through
+  `int64(asFloat)`, which truncated. It parses as `uint64` now.
+
+`ID` is a struct (`schemabuilder.ID{Value string}`) rather than `type ID string` because
+`schemabuilder` treats any two Go types of the same kind as the same scalar — a defined string type
+would be indistinguishable from `string`. Per the specification, an `ID` argument accepts both a
+string and an integer.
+
+The introspection and query snapshots were regenerated and the diff read: it contains only scalar
+renames (`string`→`String`, `bool`→`Boolean`, `int64`→`Int64`) and `int64` values changing from JSON
+numbers to strings. Nothing else moved.
+
+## D12. Response paths carry typed segments, and start at the root field
+
+Phase 4b. `pathError` and the executor's `pathTracker` stored path segments as `[]string`, with list
+indices stringified. The specification requires an error's `path` to be a list of field names
+(strings) and list indices (numbers), and Relay's partial-data handling reads it, so both now carry
+`[]interface{}` with real `int` indices. `writePath` still renders the dotted form for `Error()` and
+`Reason()`, so no error *message* changed.
+
+The top-level output node was seeded with the **operation name**, which then prefixed every error
+path — `query foo { error }` produced `foo.error: test error`. An operation name is not part of a
+response path. The root node now contributes no segment, and that error reads `error: test error`.
