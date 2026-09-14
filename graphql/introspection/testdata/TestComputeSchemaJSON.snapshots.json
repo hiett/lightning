@@ -56,12 +56,24 @@
               "name": "skip"
             },
             {
-              "args": [],
-              "description": "Client-side-only directive that instructs the type generator to mark this field as optional. This is useful for making the generated types compliant with Troy persistence schema.",
-              "locations": [
-                "FIELD"
+              "args": [
+                {
+                  "defaultValue": null,
+                  "description": "Explains why this element was deprecated.",
+                  "name": "reason",
+                  "type": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
               ],
-              "name": "type_as_optional"
+              "description": "Marks an element of a GraphQL schema as no longer supported.",
+              "locations": [
+                "FIELD_DEFINITION",
+                "ENUM_VALUE"
+              ],
+              "name": "deprecated"
             }
           ],
           "mutationType": {
@@ -70,6 +82,7 @@
           "queryType": {
             "name": "Query"
           },
+          "subscriptionType": null,
           "types": [
             {
               "description": "",
@@ -162,7 +175,7 @@
               ]
             },
             {
-              "description": "",
+              "description": "A 64-bit signed integer, serialised as a decimal string because a JSON number cannot carry the full range without loss of precision.",
               "enumValues": [],
               "fields": [],
               "inputFields": [],
@@ -809,13 +822,13 @@
               "enumValues": [
                 {
                   "deprecationReason": "",
-                  "description": "0",
+                  "description": "",
                   "isDeprecated": false,
                   "name": "asc"
                 },
                 {
                   "deprecationReason": "",
-                  "description": "1",
+                  "description": "",
                   "isDeprecated": false,
                   "name": "desc"
                 }
@@ -1060,19 +1073,19 @@
               "enumValues": [
                 {
                   "deprecationReason": "",
-                  "description": "3",
+                  "description": "",
                   "isDeprecated": false,
                   "name": "random"
                 },
                 {
                   "deprecationReason": "",
-                  "description": "2",
+                  "description": "",
                   "isDeprecated": false,
                   "name": "random1"
                 },
                 {
                   "deprecationReason": "",
-                  "description": "1",
+                  "description": "",
                   "isDeprecated": false,
                   "name": "random2"
                 }

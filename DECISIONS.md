@@ -198,3 +198,91 @@ indices stringified. The specification requires an error's `path` to be a list o
 The top-level output node was seeded with the **operation name**, which then prefixed every error
 path — `query foo { error }` produced `foo.error: test error`. An operation name is not part of a
 response path. The root node now contributes no segment, and that error reads `error: test error`.
+
+## D13. Interfaces mirror the union authoring pattern
+
+Phase 5. `PLAN.md` asks for "the analogous thing for interfaces" to `schemabuilder.Union`. Taken
+literally: `schemabuilder.Interface` is a marker struct, and the embedded pointer fields of the
+struct that embeds it are the implementing types.
+
+```go
+type Content struct {
+    schemabuilder.Interface
+
+    *Photo
+    *Article
+}
+```
+
+A field returning `*Content` returns the struct with exactly one member set, exactly as a union
+does. The marker struct *is* the type discriminator, so no `TypeResolver` function has to be written
+by hand; `schemabuilder` builds one that matches by **struct field index**, which means an object
+registered under a GraphQL name different from its Go type name still resolves. (`resolveUnionBatch`
+still matches unions by Go field name and so still has that limitation; unions were out of scope.)
+
+**The interface's field set** defaults to every field all implementing types agree on — same name,
+same result type, same arguments. `schema.Interface("Content", Content{}).Fields("id", "summary")`
+declares it explicitly instead, and building fails if any named field is missing from an
+implementing type or disagrees about its signature. Relay's `Node` wants the explicit form; a
+grab-bag interface is happy with the default.
+
+### Type conditions were previously ignored altogether
+
+`graphql/types.go` said of `Fragment.On`: *"That is not currently implemented in this package."* It
+was not an understatement — `Flatten` merged **every** fragment into the selection regardless of its
+type condition, so `... on Photo { caption }` inside a list of articles asked every article for
+`caption`. Unions worked only because `resolveUnionBatch` filtered fragments itself before calling
+into the object resolver.
+
+`Flatten` now takes the concrete `*Object` it is flattening against and keeps only fragments whose
+condition matches — no condition, the object's own name, or an interface the object implements.
+`FlattenAll` is the unfiltered form, for callers that have already narrowed. `FragmentApplies` is
+exported because both executor and `PrepareQuery` need the same rule, and union fragment matching
+now goes through it too, so `... on SomeInterface` works inside a union.
+
+This changed one existing test: `graphql/directive_test.go` registered its type as
+`schema.Object("item", Item{})` but wrote `fragment X on Item`. The mismatch had no effect while
+type conditions were ignored, and the fragment simply stopped applying once they were not. The
+schema now registers `Item`, which is what the fragments always meant. gqlparser's validator would
+reject the old query outright.
+
+## D14. Phase 8 introspection work landed with Phase 5
+
+`registerType` in `graphql/introspection/introspection.go` had to be rewritten for interfaces
+(`kind: INTERFACE`, real `interfaces`, `possibleTypes` for interfaces as well as unions, `fields`
+for interfaces). Rewriting the same function twice would have been wasteful, so Phase 8 items 3, 4
+and 5 landed at the same time:
+
+- **`subscriptionType`** added to `introspection_query.go` and populated from `Schema.Subscription`.
+- **Descriptions** are now reported for scalars, enums, enum values, input objects, input fields,
+  interfaces, fields and arguments, not only objects and unions. The carrying fields
+  (`Field.Description`, `Field.ArgDescriptions`, `Enum.Descriptions`, `InputObject.FieldDescriptions`,
+  `Scalar.Description`, …) were added to `graphql/types.go`. How they are *authored* in
+  `schemabuilder` is Phase 8's remaining work.
+- **Deprecation** is wired through: `Field.DeprecationReason` and `Enum.DeprecationReasons` drive
+  `isDeprecated`/`deprecationReason`, `includeDeprecated` actually filters, and the printed SDL
+  emits `@deprecated(reason: ...)`.
+
+Two removals:
+
+- `TypeAsOptionalDirective` (`@type_as_optional`) was a Samsara-internal, client-side-only directive
+  referring to "Troy persistence schema", with no implementation anywhere in the tree. It is
+  replaced in the advertised directive list by `@deprecated`, which the schema now actually uses.
+- Enum value descriptions were being filled with the Go value behind the enum (`"0"`, `"1"`, …),
+  which is not a description. They are empty unless one is supplied.
+
+**Known gap:** `__Type.interfaces` and `__Type.possibleTypes` report `[]` rather than `null` for
+kinds that have neither. The specification says null. `schemabuilder` cannot express a nullable list
+return (`*[]T` is not a type it can build), and relay-compiler is fed the exported SDL rather than
+introspection JSON, so this is recorded rather than worked around.
+
+## D15. Pre-existing data races in the `reactive` test suite
+
+`go test -race ./...` was never clean on this tree. Three tests in `reactive/rerunner_test.go`
+(`TestErrorRetry`, `TestErrorRetryDelay`, `TestMinRerunInterval`) shared state between the test
+goroutine and the rerunner's goroutine with no synchronisation, and `Expect.Trigger` panicked with
+"close of closed channel" when a computation ran more than once against the same `Expect`.
+
+The races are in the tests, not in `reactive` itself. The shared state is now mutex-guarded,
+`Expect.Trigger` is idempotent via `sync.Once`, and `TestMinRerunInterval` stops its runner. Verified
+with `go test -race -count=5 ./reactive/`.

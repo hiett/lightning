@@ -502,6 +502,13 @@ func applyVariableDefaults(operation *ast.OperationDefinition, vars map[string]i
 	return vars
 }
 
+// FlattenAll flattens a selection set keeping every fragment, regardless of
+// type condition. It is the right call when the caller has already narrowed the
+// fragments itself.
+func FlattenAll(selectionSet *SelectionSet) ([]*Selection, error) {
+	return Flatten(selectionSet, nil)
+}
+
 func MustParse(source string, vars map[string]interface{}) *Query {
 	query, err := Parse(source, vars)
 	if err != nil {
@@ -511,7 +518,10 @@ func MustParse(source string, vars map[string]interface{}) *Query {
 }
 
 // Flatten takes a SelectionSet and flattens it into an array of selections
-// with unique aliases
+// with unique aliases, keeping only the fragments that apply to typ.
+//
+// Passing a nil typ keeps every fragment, which is what callers that have
+// already filtered by type condition want.
 //
 // A GraphQL query (the SelectionSet) is allowed to contain the same key
 // multiple times, as well as fragments. For example,
@@ -529,7 +539,7 @@ func MustParse(source string, vars map[string]interface{}) *Query {
 //
 // Flatten does _not_ flatten out the inner queries, so the name above does not
 // get flattened out yet.
-func Flatten(selectionSet *SelectionSet) ([]*Selection, error) {
+func Flatten(selectionSet *SelectionSet, typ *Object) ([]*Selection, error) {
 	grouped := make(map[string][]*Selection)
 
 	state := make(map[*SelectionSet]visitState)
@@ -544,6 +554,9 @@ func Flatten(selectionSet *SelectionSet) ([]*Selection, error) {
 		}
 
 		for _, fragment := range selectionSet.Fragments {
+			if !FragmentApplies(fragment.On, typ) {
+				continue
+			}
 			ok, err := ShouldIncludeNode(fragment.Directives)
 			if err != nil {
 				return err

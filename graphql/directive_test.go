@@ -21,7 +21,7 @@ func buildSchema() *graphql.Schema {
 		return Inner{}
 	})
 
-	item := schema.Object("item", Item{})
+	item := schema.Object("Item", Item{})
 	item.Key("id")
 	item.FieldFunc("name", func(ctx context.Context, item Item) (string, error) {
 		return fmt.Sprint(item.Id), nil

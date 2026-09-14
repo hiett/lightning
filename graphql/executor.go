@@ -107,6 +107,18 @@ func writePath(pe *pathError, buffer *bytes.Buffer) {
 	}
 }
 
+// checkTypenameSelection validates a __typename selection, which is legal on
+// every composite type and takes no arguments and no sub-selection.
+func checkTypenameSelection(selection *Selection) error {
+	if !isNilArgs(selection.UnparsedArgs) {
+		return NewClientError(`error parsing args for "__typename": no args expected`)
+	}
+	if selection.SelectionSet != nil {
+		return NewClientError(`scalar field "__typename" must have no selection`)
+	}
+	return nil
+}
+
 func isNilArgs(args interface{}) bool {
 	m, ok := args.(map[string]interface{})
 	return args == nil || (ok && len(m) == 0)
@@ -145,8 +157,8 @@ func PrepareQuery(ctx context.Context, typ Type, selectionSet *SelectionSet) err
 		}
 
 		for _, fragment := range selectionSet.Fragments {
-			for typString, graphqlTyp := range typ.Types {
-				if fragment.On != typString {
+			for _, graphqlTyp := range typ.Types {
+				if !FragmentApplies(fragment.On, graphqlTyp) {
 					continue
 				}
 				if err := PrepareQuery(ctx, graphqlTyp, fragment.SelectionSet); err != nil {
@@ -156,12 +168,11 @@ func PrepareQuery(ctx context.Context, typ Type, selectionSet *SelectionSet) err
 		}
 		for _, selection := range selectionSet.Selections {
 			if selection.Name == "__typename" {
-				if !isNilArgs(selection.UnparsedArgs) {
-					return NewClientError(`error parsing args for "__typename": no args expected`)
+				if err := checkTypenameSelection(selection); err != nil {
+					return err
 				}
-				if selection.SelectionSet != nil {
-					return NewClientError(`scalar field "__typename" must have no selection`)
-				}
+				// A union has no fields of its own, so __typename is pushed
+				// down into each fragment, where a concrete type can answer it.
 				for _, fragment := range selectionSet.Fragments {
 					fragment.SelectionSet.Selections = append(fragment.SelectionSet.Selections, selection)
 				}
@@ -170,17 +181,78 @@ func PrepareQuery(ctx context.Context, typ Type, selectionSet *SelectionSet) err
 			return NewClientError(`unknown field "%s"`, selection.Name)
 		}
 		return nil
+
+	case *Interface:
+		if selectionSet == nil {
+			return NewClientError("object field must have selections")
+		}
+
+		// Selections made directly on the interface must be interface fields.
+		// Their arguments are parsed against the interface's declaration, which
+		// every implementing type is required to match.
+		for _, selection := range selectionSet.Selections {
+			if selection.Name == "__typename" {
+				if err := checkTypenameSelection(selection); err != nil {
+					return err
+				}
+				continue
+			}
+
+			field, ok := typ.Fields[selection.Name]
+			if !ok {
+				return NewClientError(`unknown field "%s"`, selection.Name)
+			}
+
+			if !selection.parsed {
+				selection.parsed = true
+				parsed, err := field.ParseArguments(selection.UnparsedArgs)
+				if err != nil {
+					return NewClientError(`error parsing args for "%s": %s`, selection.Name, err)
+				}
+				selection.Args = parsed
+			}
+
+			selection.ParentType = typ.Name
+
+			if err := PrepareQuery(ctx, field.Type, selection.SelectionSet); err != nil {
+				return err
+			}
+		}
+
+		for _, fragment := range selectionSet.Fragments {
+			// A fragment naming the interface itself, or naming nothing, is
+			// still an interface-level selection.
+			if fragment.On == "" || fragment.On == typ.Name {
+				if err := PrepareQuery(ctx, typ, fragment.SelectionSet); err != nil {
+					return err
+				}
+				continue
+			}
+
+			// Otherwise it narrows to whichever implementing types it matches.
+			matched := false
+			for _, object := range typ.PossibleTypes {
+				if !FragmentApplies(fragment.On, object) {
+					continue
+				}
+				matched = true
+				if err := PrepareQuery(ctx, object, fragment.SelectionSet); err != nil {
+					return err
+				}
+			}
+			if !matched {
+				return NewClientError(`fragment on "%s" can never match interface "%s"`, fragment.On, typ.Name)
+			}
+		}
+		return nil
 	case *Object:
 		if selectionSet == nil {
 			return NewClientError("object field must have selections")
 		}
 		for _, selection := range selectionSet.Selections {
 			if selection.Name == "__typename" {
-				if !isNilArgs(selection.UnparsedArgs) {
-					return NewClientError(`error parsing args for "__typename": no args expected`)
-				}
-				if selection.SelectionSet != nil {
-					return NewClientError(`scalar field "__typename" must have no selection`)
+				if err := checkTypenameSelection(selection); err != nil {
+					return err
 				}
 				continue
 			}

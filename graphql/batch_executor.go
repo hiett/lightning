@@ -123,7 +123,7 @@ func (e *Executor) Execute(ctx context.Context, typ Type, source interface{}, qu
 		return nil, fmt.Errorf("expected query or mutation object for execution, got: %s", typ.String())
 	}
 
-	topLevelSelections, err := Flatten(query.SelectionSet)
+	topLevelSelections, err := Flatten(query.SelectionSet, queryObject)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +298,8 @@ func resolveBatch(ctx context.Context, sources []interface{}, typ Type, selectio
 		return resolveListBatch(ctx, sources, typ, selectionSet, destinations)
 	case *Union:
 		return resolveUnionBatch(ctx, sources, typ, selectionSet, destinations)
+	case *Interface:
+		return resolveInterfaceBatch(ctx, sources, typ, selectionSet, destinations)
 	case *Object:
 		return resolveObjectBatch(ctx, sources, typ, selectionSet, destinations)
 	case *NonNull:
@@ -404,7 +406,7 @@ func resolveUnionBatch(ctx context.Context, sources []interface{}, typ *Union, s
 	for srcType, sources := range sourcesByType {
 		gqlType := typ.Types[srcType]
 		for _, fragment := range selectionSet.Fragments {
-			if fragment.On != srcType {
+			if !FragmentApplies(fragment.On, gqlType) {
 				continue
 			}
 			units, err := resolveObjectBatch(ctx, sources, gqlType, fragment.SelectionSet, destinationsByType[srcType])
@@ -418,10 +420,48 @@ func resolveUnionBatch(ctx context.Context, sources []interface{}, typ *Union, s
 	return workUnits, nil
 }
 
+// Traverses the Interface type and resolves the selections against whichever
+// concrete object type each source turns out to carry.
+//
+// Unlike a union, an interface's own fields can be selected directly, so the
+// whole selection set is handed to the concrete type rather than only the
+// fragments that name it. resolveObjectBatch filters the fragments by type
+// condition on the way through.
+func resolveInterfaceBatch(ctx context.Context, sources []interface{}, typ *Interface, selectionSet *SelectionSet, destinations []*outputNode) ([]*WorkUnit, error) {
+	sourcesByType := make(map[string][]interface{}, len(typ.PossibleTypes))
+	destinationsByType := make(map[string][]*outputNode, len(typ.PossibleTypes))
+
+	for idx, src := range sources {
+		name, concrete, err := typ.TypeResolver(src)
+		if err != nil {
+			return nil, err
+		}
+		if name == "" {
+			destinations[idx].Fill(nil)
+			continue
+		}
+		if _, ok := typ.PossibleTypes[name]; !ok {
+			return nil, fmt.Errorf("interface %s resolved to %s, which does not implement it", typ.Name, name)
+		}
+		sourcesByType[name] = append(sourcesByType[name], concrete)
+		destinationsByType[name] = append(destinationsByType[name], destinations[idx])
+	}
+
+	var workUnits []*WorkUnit
+	for name, srcs := range sourcesByType {
+		units, err := resolveObjectBatch(ctx, srcs, typ.PossibleTypes[name], selectionSet, destinationsByType[name])
+		if err != nil {
+			return nil, err
+		}
+		workUnits = append(workUnits, units...)
+	}
+	return workUnits, nil
+}
+
 // Traverses the object selections and resolves or creates work units to resolve
 // all of the object fields for every source passed in.
 func resolveObjectBatch(ctx context.Context, sources []interface{}, typ *Object, selectionSet *SelectionSet, destinations []*outputNode) ([]*WorkUnit, error) {
-	selections, err := Flatten(selectionSet)
+	selections, err := Flatten(selectionSet, typ)
 	if err != nil {
 		return nil, err
 	}

@@ -205,7 +205,7 @@ func TestFlatten(t *testing.T) {
 	type Args struct {
 		Value int
 	}
-	result, err := graphql.Flatten(&graphql.SelectionSet{
+	result, err := graphql.FlattenAll(&graphql.SelectionSet{
 		Selections: []*graphql.Selection{
 			{
 				Name:  "a",

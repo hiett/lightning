@@ -3,7 +3,6 @@ package introspection
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sort"
 
 	"github.com/hiett/lightning/graphql"
@@ -11,9 +10,10 @@ import (
 )
 
 type introspection struct {
-	types    map[string]graphql.Type
-	query    graphql.Type
-	mutation graphql.Type
+	types        map[string]graphql.Type
+	query        graphql.Type
+	mutation     graphql.Type
+	subscription graphql.Type
 }
 
 type DirectiveLocation string
@@ -25,6 +25,9 @@ const (
 	FRAGMENT_DEFINITION                   = "FRAGMENT_DEFINITION"
 	FRAGMENT_SPREAD                       = "FRAGMENT_SPREAD"
 	INLINE_FRAGMENT                       = "INLINE_FRAGMENT"
+	SUBSCRIPTION                          = "SUBSCRIPTION"
+	FIELD_DEFINITION                      = "FIELD_DEFINITION"
+	ENUM_VALUE                            = "ENUM_VALUE"
 )
 
 type TypeKind string
@@ -123,13 +126,20 @@ var SkipDirective = Directive{
 	},
 }
 
-var TypeAsOptionalDirective = Directive{
-	Description: "Client-side-only directive that instructs the type generator to mark this field as optional. This is useful for making the generated types compliant with Troy persistence schema.",
+var DeprecatedDirective = Directive{
+	Description: "Marks an element of a GraphQL schema as no longer supported.",
 	Locations: []DirectiveLocation{
-		FIELD,
+		FIELD_DEFINITION,
+		ENUM_VALUE,
 	},
-	Name: "type_as_optional",
-	Args: []InputValue{},
+	Name: "deprecated",
+	Args: []InputValue{
+		{
+			Name:        "reason",
+			Type:        Type{Inner: &graphql.Scalar{Type: "String"}},
+			Description: "Explains why this element was deprecated.",
+		},
+	},
 }
 
 func (s *introspection) registerType(schema *schemabuilder.Schema) {
@@ -138,6 +148,8 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		switch t.Inner.(type) {
 		case *graphql.Object:
 			return OBJECT
+		case *graphql.Interface:
+			return INTERFACE
 		case *graphql.Union:
 			return UNION
 		case *graphql.Scalar:
@@ -159,6 +171,8 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		switch t := t.Inner.(type) {
 		case *graphql.Object:
 			return &t.Name
+		case *graphql.Interface:
+			return &t.Name
 		case *graphql.Union:
 			return &t.Name
 		case *graphql.Scalar:
@@ -176,27 +190,51 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		switch t := t.Inner.(type) {
 		case *graphql.Object:
 			return t.Description
+		case *graphql.Interface:
+			return t.Description
 		case *graphql.Union:
+			return t.Description
+		case *graphql.Scalar:
+			return t.Description
+		case *graphql.Enum:
+			return t.Description
+		case *graphql.InputObject:
 			return t.Description
 		default:
 			return ""
 		}
 	})
 
-	object.FieldFunc("interfaces", func() []Type { return nil })
+	object.FieldFunc("interfaces", func(t Type) []Type {
+		object, ok := t.Inner.(*graphql.Object)
+		if !ok {
+			return nil
+		}
+		types := make([]Type, 0, len(object.Interfaces))
+		for _, iface := range object.Interfaces {
+			types = append(types, Type{Inner: iface})
+		}
+		sortTypes(types)
+		return types
+	})
+
 	object.FieldFunc("possibleTypes", func(t Type) []Type {
+		var objects map[string]*graphql.Object
 		switch t := t.Inner.(type) {
 		case *graphql.Union:
-			types := make([]Type, 0, len(t.Types))
-			for _, typ := range t.Types {
-				types = append(types, Type{Inner: typ})
-			}
-
-			sort.Slice(types, func(i, j int) bool { return types[i].Inner.String() < types[j].Inner.String() })
-			return types
+			objects = t.Types
+		case *graphql.Interface:
+			objects = t.PossibleTypes
 		default:
 			return nil
 		}
+
+		types := make([]Type, 0, len(objects))
+		for _, typ := range objects {
+			types = append(types, Type{Inner: typ})
+		}
+		sortTypes(types)
+		return types
 	})
 
 	object.FieldFunc("inputFields", func(t Type) []InputValue {
@@ -206,8 +244,9 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		case *graphql.InputObject:
 			for name, f := range t.InputFields {
 				fields = append(fields, InputValue{
-					Name: name,
-					Type: Type{Inner: f},
+					Name:        name,
+					Description: t.FieldDescriptions[name],
+					Type:        Type{Inner: f},
 				})
 			}
 		}
@@ -219,26 +258,42 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 	object.FieldFunc("fields", func(t Type, args struct {
 		IncludeDeprecated *bool
 	}) []field {
-		var fields []field
-
+		var source map[string]*graphql.Field
 		switch t := t.Inner.(type) {
 		case *graphql.Object:
-			for name, f := range t.Fields {
-				var args []InputValue
-				for name, a := range f.Args {
-					args = append(args, InputValue{
-						Name: name,
-						Type: Type{Inner: a},
-					})
-				}
-				sort.Slice(args, func(i, j int) bool { return args[i].Name < args[j].Name })
+			source = t.Fields
+		case *graphql.Interface:
+			source = t.Fields
+		default:
+			return nil
+		}
 
-				fields = append(fields, field{
-					Name: name,
-					Type: Type{Inner: f.Type},
-					Args: args,
+		includeDeprecated := args.IncludeDeprecated != nil && *args.IncludeDeprecated
+
+		var fields []field
+		for name, f := range source {
+			if f.DeprecationReason != "" && !includeDeprecated {
+				continue
+			}
+
+			var args []InputValue
+			for argName, a := range f.Args {
+				args = append(args, InputValue{
+					Name:        argName,
+					Description: f.ArgDescriptions[argName],
+					Type:        Type{Inner: a},
 				})
 			}
+			sort.Slice(args, func(i, j int) bool { return args[i].Name < args[j].Name })
+
+			fields = append(fields, field{
+				Name:              name,
+				Description:       f.Description,
+				Type:              Type{Inner: f.Type},
+				Args:              args,
+				IsDeprecated:      f.DeprecationReason != "",
+				DeprecationReason: f.DeprecationReason,
+			})
 		}
 		sort.Slice(fields, func(i, j int) bool { return fields[i].Name < fields[j].Name })
 
@@ -259,20 +314,34 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 	object.FieldFunc("enumValues", func(t Type, args struct {
 		IncludeDeprecated *bool
 	}) []EnumValue {
-
-		switch t := t.Inner.(type) {
-		case *graphql.Enum:
-			var enumVals []EnumValue
-			for k, v := range t.ReverseMap {
-				val := fmt.Sprintf("%v", k)
-				enumVals = append(enumVals,
-					EnumValue{Name: v, Description: val, IsDeprecated: false, DeprecationReason: ""})
-			}
-			sort.Slice(enumVals, func(i, j int) bool { return enumVals[i].Name < enumVals[j].Name })
-			return enumVals
+		enum, ok := t.Inner.(*graphql.Enum)
+		if !ok {
+			return nil
 		}
-		return nil
+
+		includeDeprecated := args.IncludeDeprecated != nil && *args.IncludeDeprecated
+
+		var enumVals []EnumValue
+		for _, name := range enum.Values {
+			reason := enum.DeprecationReasons[name]
+			if reason != "" && !includeDeprecated {
+				continue
+			}
+			enumVals = append(enumVals, EnumValue{
+				Name:              name,
+				Description:       enum.Descriptions[name],
+				IsDeprecated:      reason != "",
+				DeprecationReason: reason,
+			})
+		}
+		sort.Slice(enumVals, func(i, j int) bool { return enumVals[i].Name < enumVals[j].Name })
+		return enumVals
 	})
+}
+
+// sortTypes orders a type list by name so introspection output is stable.
+func sortTypes(types []Type) {
+	sort.Slice(types, func(i, j int) bool { return types[i].Inner.String() < types[j].Inner.String() })
 }
 
 type field struct {
@@ -302,6 +371,23 @@ func collectTypes(typ graphql.Type, types map[string]graphql.Type) {
 			for _, arg := range field.Args {
 				collectTypes(arg, types)
 			}
+		}
+
+	case *graphql.Interface:
+		if _, ok := types[typ.Name]; ok {
+			return
+		}
+		types[typ.Name] = typ
+
+		for _, field := range typ.Fields {
+			collectTypes(field.Type, types)
+
+			for _, arg := range field.Args {
+				collectTypes(arg, types)
+			}
+		}
+		for _, possible := range typ.PossibleTypes {
+			collectTypes(possible, types)
 		}
 
 	case *graphql.Union:
@@ -354,16 +440,20 @@ func (s *introspection) registerQuery(schema *schemabuilder.Schema) {
 		}
 		sort.Slice(types, func(i, j int) bool { return types[i].Inner.String() < types[j].Inner.String() })
 
-		return &Schema{
+		schema := &Schema{
 			Types:        types,
 			QueryType:    &Type{Inner: s.query},
 			MutationType: &Type{Inner: s.mutation},
 			Directives: []Directive{
 				IncludeDirective,
 				SkipDirective,
-				TypeAsOptionalDirective,
+				DeprecatedDirective,
 			},
 		}
+		if s.subscription != nil {
+			schema.SubscriptionType = &Type{Inner: s.subscription}
+		}
+		return schema
 	})
 
 	object.FieldFunc("__type", func(args struct{ Name string }) *Type {
@@ -396,10 +486,12 @@ func BareIntrospectionSchema(schema *graphql.Schema) *graphql.Schema {
 	types := make(map[string]graphql.Type)
 	collectTypes(schema.Query, types)
 	collectTypes(schema.Mutation, types)
+	collectTypes(schema.Subscription, types)
 	is := &introspection{
-		types:    types,
-		query:    schema.Query,
-		mutation: schema.Mutation,
+		types:        types,
+		query:        schema.Query,
+		mutation:     schema.Mutation,
+		subscription: schema.Subscription,
 	}
 	return is.schema()
 }

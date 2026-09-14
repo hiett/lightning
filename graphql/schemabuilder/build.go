@@ -15,6 +15,7 @@ type schemaBuilder struct {
 	types        map[reflect.Type]graphql.Type
 	typeNames    map[string]reflect.Type
 	objects      map[reflect.Type]*Object
+	interfaces   map[string]*InterfaceObject
 	enumMappings map[reflect.Type]*EnumMapping
 	typeCache    map[reflect.Type]cachedType // typeCache maps Go types to GraphQL datatypes
 }

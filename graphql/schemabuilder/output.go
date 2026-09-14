@@ -22,8 +22,16 @@ func (sb *schemaBuilder) buildStruct(typ reflect.Type) error {
 		return fmt.Errorf("schemabuilder.Union can only be used as an embedded anonymous non-pointer struct")
 	}
 
+	if typ == interfaceMarkerType {
+		return fmt.Errorf("schemabuilder.Interface can only be used as an embedded anonymous non-pointer struct")
+	}
+
 	if hasUnionMarkerEmbedded(typ) {
 		return sb.buildUnionStruct(typ)
+	}
+
+	if hasInterfaceMarkerEmbedded(typ) {
+		return sb.buildInterfaceStruct(typ)
 	}
 
 	var name string

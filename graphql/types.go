@@ -31,9 +31,18 @@ func (s *Scalar) String() string {
 
 // Enum is a leaf value
 type Enum struct {
-	Type       string
-	Values     []string
-	ReverseMap map[interface{}]string
+	Type        string
+	Description string
+	Values      []string
+	ReverseMap  map[interface{}]string
+
+	// Descriptions holds documentation for individual enum values, keyed by
+	// value name.
+	Descriptions map[string]string
+
+	// DeprecationReasons marks individual enum values deprecated, keyed by
+	// value name.
+	DeprecationReasons map[string]string
 }
 
 func (e *Enum) isType() {}
@@ -77,7 +86,12 @@ func (l *List) String() string {
 
 type InputObject struct {
 	Name        string
+	Description string
 	InputFields map[string]Type
+
+	// FieldDescriptions holds documentation for individual input fields, keyed
+	// by field name.
+	FieldDescriptions map[string]string
 }
 
 func (io *InputObject) isType() {}
@@ -111,10 +125,32 @@ type Interface struct {
 	// keyed by type name.
 	PossibleTypes map[string]*Object
 
-	// TypeResolver maps a Go value flowing through a field of this interface
-	// type to the name of the concrete object type that should be used to
-	// resolve it. It must return a name present in PossibleTypes.
-	TypeResolver func(ctx context.Context, value interface{}) (string, error)
+	// TypeResolver inspects a value flowing through a field of this interface
+	// type and reports which of PossibleTypes it carries, along with the value
+	// to resolve for that type. An empty name means the value is absent, and is
+	// written as null.
+	TypeResolver func(value interface{}) (name string, concrete interface{}, err error)
+}
+
+// Implements reports whether an object type implements the named interface.
+func (o *Object) Implements(name string) bool {
+	_, ok := o.Interfaces[name]
+	return ok
+}
+
+// FragmentApplies reports whether a fragment with the given type condition
+// applies to a value of object type o.
+//
+// A fragment with no type condition applies to whatever encloses it; otherwise
+// the condition must name the object itself or an interface it implements.
+func FragmentApplies(on string, o *Object) bool {
+	if on == "" || o == nil {
+		return true
+	}
+	if on == o.Name {
+		return true
+	}
+	return o.Implements(on)
 }
 
 func (i *Interface) isType() {}

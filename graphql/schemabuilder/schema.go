@@ -15,15 +15,17 @@ const federationName = "Federation"
 // can be registered against the "Mutation" and "Query" objects in order to
 // build out a full GraphQL schema.
 type Schema struct {
-	Name      string
-	objects   map[string]*Object
-	enumTypes map[reflect.Type]*EnumMapping
+	Name       string
+	objects    map[string]*Object
+	interfaces map[string]*InterfaceObject
+	enumTypes  map[reflect.Type]*EnumMapping
 }
 
 // NewSchema creates a new schema.
 func NewSchema() *Schema {
 	schema := &Schema{
-		objects: make(map[string]*Object),
+		objects:    make(map[string]*Object),
+		interfaces: make(map[string]*InterfaceObject),
 	}
 
 	// Default registrations.
@@ -38,8 +40,9 @@ func NewSchema() *Schema {
 // NewSchema creates a new schema with a schema name
 func NewSchemaWithName(name string) *Schema {
 	schema := &Schema{
-		Name:    strings.ToLower(name),
-		objects: make(map[string]*Object),
+		Name:       strings.ToLower(name),
+		objects:    make(map[string]*Object),
+		interfaces: make(map[string]*InterfaceObject),
 	}
 
 	// Default registrations.
@@ -345,6 +348,7 @@ func (s *Schema) Build() (*graphql.Schema, error) {
 		types:        make(map[reflect.Type]graphql.Type),
 		typeNames:    make(map[string]reflect.Type),
 		objects:      make(map[reflect.Type]*Object),
+		interfaces:   s.interfaces,
 		enumMappings: s.enumTypes,
 		typeCache:    make(map[reflect.Type]cachedType, 0),
 	}

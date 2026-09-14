@@ -11,7 +11,8 @@ import (
 
 // Expect is a utility for verifying that goroutines make progress.
 type Expect struct {
-	ch chan struct{}
+	once sync.Once
+	ch   chan struct{}
 }
 
 // NewExpect creates a new Expect.
@@ -22,8 +23,12 @@ func NewExpect() *Expect {
 }
 
 // Trigger lets a goroutine notify it has made progress.
+//
+// It is idempotent: a computation that the rerunner runs more than once against
+// the same Expect reports progress once rather than panicking on a closed
+// channel.
 func (e *Expect) Trigger() {
-	close(e.ch)
+	e.once.Do(func() { close(e.ch) })
 }
 
 // Expect lets a tester wait for a goroutine to make progress. Expect is fast
@@ -184,86 +189,127 @@ func TestError(t *testing.T) {
 // and does not stop the rerunner if the retry sentinel is passed down.
 func TestErrorRetry(t *testing.T) {
 	dep := NewResource()
-	run := NewExpect()
 
+	// The computation runs on the rerunner's goroutine while the test reads
+	// this state from its own, so every access is guarded.
+	var mu sync.Mutex
+	run := NewExpect()
 	innerRuns := 0
 	shouldSentinel := false
+
+	currentRun := func() *Expect {
+		mu.Lock()
+		defer mu.Unlock()
+		return run
+	}
+	resetRun := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		run = NewExpect()
+	}
+	expectInnerRuns := func(want int, context string) {
+		t.Helper()
+		mu.Lock()
+		defer mu.Unlock()
+		if innerRuns != want {
+			t.Errorf("%s: expected %d run(s), but got %d", context, want, innerRuns)
+		}
+	}
+	setSentinel := func(v bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		shouldSentinel = v
+	}
 
 	NewRerunner(context.Background(), func(ctx context.Context) (interface{}, error) {
 		AddDependency(ctx, dep, nil)
 		Cache(ctx, "", func(ctx context.Context) (interface{}, error) {
+			mu.Lock()
 			innerRuns = innerRuns + 1
+			mu.Unlock()
 			return nil, nil
 		})
 
-		if shouldSentinel {
-			oldRun := run
+		mu.Lock()
+		sentinel := shouldSentinel
+		oldRun := run
+		if sentinel {
 			run = NewExpect()
-			oldRun.Trigger()
+		}
+		mu.Unlock()
+
+		oldRun.Trigger()
+		if sentinel {
 			return nil, RetrySentinelError
-		} else {
-			run.Trigger()
 		}
 		return nil, nil
 	}, 0, false)
 
-	run.Expect(t, "expected run")
-	if innerRuns != 1 {
-		t.Errorf("expected 1 run, but got %d", innerRuns)
-	}
+	currentRun().Expect(t, "expected run")
+	expectInnerRuns(1, "first run")
 
-	run = NewExpect()
+	resetRun()
 	dep.Strobe()
 
-	run.Expect(t, "expected rerun")
-	if innerRuns != 1 {
-		t.Errorf("expected 1 run, but got %d", innerRuns)
-	}
+	currentRun().Expect(t, "expected rerun")
+	expectInnerRuns(1, "after rerun")
 
-	run = NewExpect()
-	shouldSentinel = true
+	resetRun()
+	setSentinel(true)
 	dep.Strobe()
 
-	run.Expect(t, "expected rerun with sentinel")
-	if innerRuns != 1 {
-		t.Errorf("expected 1 run, but got %d", innerRuns)
-	}
+	currentRun().Expect(t, "expected rerun with sentinel")
+	expectInnerRuns(1, "after sentinel rerun")
 
 	// The runner has not stopped because of our retry.
 
-	shouldSentinel = false
-	run.Expect(t, "expected rerun after sentinel")
-	if innerRuns != 2 {
-		t.Errorf("expected 2 runs (first run, then retry run), but got %d", innerRuns)
-	}
+	setSentinel(false)
+	currentRun().Expect(t, "expected rerun after sentinel")
+	expectInnerRuns(2, "after retry")
 }
 
 // TestErrorRetryDelay verifies that retries are delayed exponentially.
 func TestErrorRetryDelay(t *testing.T) {
+	// The computation runs on the rerunner's goroutine while the test reads
+	// this state from its own, so every access is guarded.
+	var mu sync.Mutex
 	run := NewExpect()
 
 	var lastRunTime time.Time
 	var lastDelta time.Duration
 
 	runner := NewRerunner(context.Background(), func(ctx context.Context) (interface{}, error) {
+		mu.Lock()
 		if !lastRunTime.IsZero() {
-			lastDelta = time.Now().Sub(lastRunTime)
+			lastDelta = time.Since(lastRunTime)
 		}
 		lastRunTime = time.Now()
 
 		oldRun := run
 		run = NewExpect()
+		mu.Unlock()
+
 		oldRun.Trigger()
 
 		return nil, RetrySentinelError
 	}, 100*time.Millisecond, false)
 
-	run.Expect(t, "expected first run")
+	currentRun := func() *Expect {
+		mu.Lock()
+		defer mu.Unlock()
+		return run
+	}
+
+	currentRun().Expect(t, "expected first run")
 
 	for _, delay := range []time.Duration{time.Millisecond * 200, time.Millisecond * 400, time.Millisecond * 800} {
-		run.Expect(t, "expected delayed run")
-		if lastDelta < delay {
-			t.Errorf("expected delay of at least %d but got %d", delay, lastDelta)
+		currentRun().Expect(t, "expected delayed run")
+
+		mu.Lock()
+		delta := lastDelta
+		mu.Unlock()
+		if delta < delay {
+			t.Errorf("expected delay of at least %d but got %d", delay, delta)
 		}
 	}
 
@@ -350,32 +396,48 @@ func TestCacheParallel(t *testing.T) {
 
 // TestMinRerunInterval tests that a runner debounces reruns
 func TestMinRerunInterval(t *testing.T) {
+	// The computation runs on the rerunner's goroutine while the test reads
+	// this state from its own, so every access is guarded.
+	var mu sync.Mutex
 	run := NewExpect()
 
 	r := NewResource()
 	var ran time.Time
 
-	NewRerunner(context.Background(), func(ctx context.Context) (interface{}, error) {
+	runner := NewRerunner(context.Background(), func(ctx context.Context) (interface{}, error) {
 		AddDependency(ctx, r, nil)
-		run.Trigger()
 
+		mu.Lock()
+		current := run
 		if ran.IsZero() {
 			ran = time.Now()
-		} else {
-			delta := time.Now().Sub(ran)
-			if delta < 800*time.Millisecond {
-				t.Error("expected at least 800ms delay")
-			}
+		} else if delta := time.Since(ran); delta < 800*time.Millisecond {
+			mu.Unlock()
+			current.Trigger()
+			t.Error("expected at least 800ms delay")
+			return nil, nil
 		}
+		mu.Unlock()
 
+		current.Trigger()
 		return nil, nil
 	}, 1*time.Second, false)
+	defer runner.Stop()
 
-	run.Expect(t, "expected run")
+	currentRun := func() *Expect {
+		mu.Lock()
+		defer mu.Unlock()
+		return run
+	}
 
+	currentRun().Expect(t, "expected run")
+
+	mu.Lock()
 	run = NewExpect()
+	mu.Unlock()
+
 	r.Invalidate()
-	run.Expect(t, "expected rerun")
+	currentRun().Expect(t, "expected rerun")
 }
 
 // TestRerunImmediately tests that RerunImmediately bypasses the
