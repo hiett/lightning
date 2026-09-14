@@ -7,8 +7,10 @@ import (
 
 	"github.com/hiett/lightning/graphql"
 	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning/internal"
 	"github.com/hiett/lightning/internal/testgraphql"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func buildSchema() *graphql.Schema {
@@ -253,4 +255,49 @@ func TestDirectivesWithErrors(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "expected type boolean, found type string in \"if\" argument")
 
+}
+
+type mergedInner struct {
+	X string
+	Y string
+}
+
+// TestDirectivesOnRepeatedSelections checks that @skip and @include are applied
+// to each occurrence of a field before occurrences are merged.
+//
+// Merging two selections of one alias built a fresh Selection without copying
+// the directives, and the executor evaluated directives on the merged result —
+// so a skipped occurrence not only stopped being skipped, it contributed its
+// sub-selections to a sibling occurrence. Whether that happened depended on
+// whether the field was selected twice, which is to say on whether some
+// unrelated fragment elsewhere in the document also asked for it.
+func TestDirectivesOnRepeatedSelections(t *testing.T) {
+	schema := schemabuilder.NewSchema()
+	schema.Query().FieldFunc("inner", func() mergedInner { return mergedInner{X: "x", Y: "y"} })
+	built := schema.MustBuild()
+
+	run := func(t *testing.T, query string) interface{} {
+		t.Helper()
+		q := graphql.MustParse(query, nil)
+		require.NoError(t, graphql.PrepareQuery(context.Background(), built.Query, q.SelectionSet))
+		e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
+		result, err := e.Execute(context.Background(), built.Query, nil, q)
+		require.NoError(t, err)
+		return internal.AsJSON(result)
+	}
+
+	require.Equal(t, internal.ParseJSON(`{}`),
+		run(t, `{ inner @skip(if: true) { x } inner @skip(if: true) { y } }`),
+		"both occurrences skipped means the field is absent")
+
+	require.Equal(t, internal.ParseJSON(`{"inner": {"x": "x"}}`),
+		run(t, `{ inner { x } inner @skip(if: true) { y } }`),
+		"a skipped occurrence must not contribute its sub-selections to the one that survived")
+
+	require.Equal(t, internal.ParseJSON(`{}`),
+		run(t, `{ a: inner @include(if: false) { x } a: inner @include(if: false) { y } }`))
+
+	require.Equal(t, internal.ParseJSON(`{"inner": {"x": "x", "y": "y"}}`),
+		run(t, `{ inner { x } inner { y } }`),
+		"without directives the occurrences still merge")
 }

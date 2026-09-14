@@ -229,3 +229,64 @@ func TestMemorySourceDeliversToEverySubscriber(t *testing.T) {
 	cancel()
 	wg.Wait()
 }
+
+// TestDependBeforeReadCatchesAConcurrentChange checks the ordering the
+// documentation prescribes: registering before the read means a change that
+// lands during the read still causes a rerun.
+//
+// Registering after the read loses it. Invalidating a key only reaches the
+// computations already registered against it, so a computation that reads at
+// one moment and registers at a later one is never told about anything that
+// happened in the window.
+func TestDependBeforeReadCatchesAConcurrentChange(t *testing.T) {
+	s, _ := newStore(t)
+	require.NoError(t, s.write(context.Background(), "a", 1))
+
+	observed := newRuns()
+	reading := make(chan struct{}, 4)
+	release := make(chan struct{})
+
+	runner := reactive.NewRerunner(context.Background(), func(ctx context.Context) (interface{}, error) {
+		// Depend first, exactly as the documentation says.
+		s.invalidator.Depend(ctx, "value:a")
+
+		select {
+		case reading <- struct{}{}:
+		default:
+		}
+		<-release
+
+		s.mu.Lock()
+		value := s.values["a"]
+		s.mu.Unlock()
+
+		observed.ch <- value
+		return nil, nil
+	}, 0, false)
+	defer runner.Stop()
+
+	// Wait until the computation has registered and is inside its "read".
+	select {
+	case <-reading:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the computation never started")
+	}
+
+	// Change the data while it is mid-read, then let it finish.
+	require.NoError(t, s.write(context.Background(), "a", 2))
+	close(release)
+
+	// The first run returns the value it read.
+	first := observed.next(t, "the first run")
+
+	// And because it registered before reading, the change during the read
+	// still forces a rerun that sees the new value.
+	require.Eventually(t, func() bool {
+		select {
+		case v := <-observed.ch:
+			return v == 2
+		default:
+			return false
+		}
+	}, 3*time.Second, 10*time.Millisecond, "a change during the read must still cause a rerun; first run saw %d", first)
+}

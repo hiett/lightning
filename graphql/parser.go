@@ -579,6 +579,17 @@ func Flatten(selectionSet *SelectionSet, typ *Object) ([]*Selection, error) {
 		}
 
 		for _, selection := range selectionSet.Selections {
+			// @skip and @include are applied per occurrence, before fields are
+			// merged. A skipped occurrence contributes nothing — not even its
+			// sub-selections, which would otherwise be merged into a sibling
+			// occurrence of the same field and resolved anyway.
+			ok, err := ShouldIncludeNode(selection.Directives)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				continue
+			}
 			grouped[selection.Alias] = append(grouped[selection.Alias], selection)
 		}
 

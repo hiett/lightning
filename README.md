@@ -303,7 +303,7 @@ The `invalidation` package is the adapter:
 invalidator := invalidation.New(invalidation.NewMemorySource())
 go invalidator.Run(ctx)
 
-// in a resolver, say what you read
+// in a resolver, say what you are about to read — before reading it
 func (s *Store) Task(ctx context.Context, id string) *Task {
     invalidator.Depend(ctx, "task:"+id)
     return s.tasks[id]
@@ -318,6 +318,11 @@ func (s *Store) SetTaskDone(ctx context.Context, id string, done bool) error {
 
 A key is an opaque string and its granularity is entirely your choice: a row, a
 table, a tenant.
+
+`Depend` goes **before** the read, not after. Invalidating a key only reaches
+computations already registered against it, so a resolver that reads first and
+registers second misses anything that changed in between, and the live query
+serves a stale value until some later change to the same key.
 
 `MemorySource` keeps events inside one process, which is all a single-process
 server needs. A fleet needs a `Source` that crosses process boundaries, because

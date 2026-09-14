@@ -2,6 +2,7 @@ package graphql_test
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -195,4 +196,70 @@ func TestConnectionTypesAreSharedAcrossFields(t *testing.T) {
 
 	_, err = graphql.ASTSchema(built)
 	require.NoError(t, err)
+}
+
+func widgetConnectionSchema(t *testing.T) *graphql.Schema {
+	t.Helper()
+	schema := schemabuilder.NewSchema()
+	widget := schema.Object("Widget", Widget{})
+	widget.Key("key")
+	schema.Query().FieldFunc("widgets", func(ctx context.Context) []*Widget {
+		return []*Widget{
+			{Key: "1", Name: "one"}, {Key: "2", Name: "two"}, {Key: "3", Name: "three"},
+			{Key: "4", Name: "four"}, {Key: "5", Name: "five"},
+		}
+	}, schemabuilder.Paginated)
+	return schema.MustBuild()
+}
+
+func widgetCursor(key string) string {
+	return base64.StdEncoding.EncodeToString([]byte(key))
+}
+
+// TestConnectionHasNextPageWithBothCursors checks hasNextPage when after and
+// before are used together.
+//
+// The count the "before" check compared against was taken before the "after"
+// cursor had sliced the list, so the last edge never looked like the last one
+// and the connection claimed there was another page. A Relay client paginating
+// forward then asked for a page that came back empty, for ever.
+func TestConnectionHasNextPageWithBothCursors(t *testing.T) {
+	built := widgetConnectionSchema(t)
+
+	hasNextPage := func(t *testing.T, args string) bool {
+		t.Helper()
+		got, err := runNodeQuery(t, built, `{ widgets(`+args+`) { pageInfo { hasNextPage } } }`)
+		require.NoError(t, err)
+		pageInfo := got.(map[string]interface{})["widgets"].(map[string]interface{})["pageInfo"].(map[string]interface{})
+		return pageInfo["hasNextPage"].(bool)
+	}
+
+	require.False(t, hasNextPage(t, `before: "`+widgetCursor("5")+`"`),
+		"nothing follows the last widget")
+	require.False(t, hasNextPage(t, `after: "`+widgetCursor("1")+`", before: "`+widgetCursor("5")+`"`),
+		"nothing follows the last widget, whichever cursor the page starts at")
+	require.False(t, hasNextPage(t, `after: "`+widgetCursor("2")+`", before: "`+widgetCursor("5")+`"`))
+	require.True(t, hasNextPage(t, `after: "`+widgetCursor("1")+`", before: "`+widgetCursor("4")+`"`),
+		"widget 5 follows widget 4, so there is another page")
+}
+
+// TestConnectionFilterAndSortMisuseAreClientErrors checks that asking a
+// connection to sort or filter by something it cannot produces a usable
+// message.
+//
+// Sorting by an unregistered field raised a plain Go error, which sanitises to
+// "Internal server error" and tells the client nothing. Filtering with no
+// filterable fields dropped every row and reported a total of zero, which reads
+// as "no matches" rather than "this cannot be filtered".
+func TestConnectionFilterAndSortMisuseAreClientErrors(t *testing.T) {
+	built := widgetConnectionSchema(t)
+
+	_, err := runNodeQuery(t, built, `{ widgets(sortBy: "name") { totalCount } }`)
+	require.Error(t, err)
+	require.Contains(t, graphql.SanitizeError(err), `unknown sort field "name"`,
+		"the message must survive sanitisation, or the client learns nothing")
+
+	_, err = runNodeQuery(t, built, `{ widgets(filterText: "one") { totalCount } }`)
+	require.Error(t, err)
+	require.Contains(t, graphql.SanitizeError(err), "no filterable fields")
 }

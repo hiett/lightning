@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -435,7 +436,6 @@ func getCursorIndex(edges []Edge, cursor string) int {
 // It also implements part of the hasNextPage and hasPreviousPage algorithm by returning if there are
 // elements after or before the arguments.
 func applyCursorsToAllEdges(edges []Edge, before *string, after *string) ([]Edge, bool, bool) {
-	edgeCount := len(edges)
 	elemsAfter := false
 	elemsBefore := false
 
@@ -450,10 +450,19 @@ func applyCursorsToAllEdges(edges []Edge, before *string, after *string) ([]Edge
 
 	}
 	if before != nil {
+		// The length is taken here, not before the after cursor was applied:
+		// getCursorIndex searches the slice as it is now, so the index of its
+		// last element is len(edges)-1 of the *current* slice. Comparing
+		// against the original length made the last edge look like a
+		// non-final one whenever after and before were used together, and the
+		// connection then reported hasNextPage on a page at the end of the
+		// list — so a client paginating forward asked for another page for
+		// ever.
+		remaining := len(edges)
 		i := getCursorIndex(edges, *before)
 		if i != -1 {
 			edges = edges[:i]
-			if i != edgeCount-1 {
+			if i != remaining-1 {
 				elemsAfter = true
 			}
 		}
@@ -618,13 +627,34 @@ func (c *connectionContext) applyTextFilter(ctx context.Context, nodes []interfa
 		return nodes, nil
 	}
 
+	// Filtering with nothing to filter on used to drop every row and report a
+	// total of zero, which reads as "no matches" rather than "this connection
+	// cannot be filtered". Say so instead.
+	if len(c.FilterTextFields) == 0 {
+		return nil, graphql.NewClientError("this connection has no filterable fields, so filterText cannot be used")
+	}
+
 	filterFields := make(map[string]bool)
 	if args.FilterTextFields != nil {
+		// A name that is not filterable is ignored rather than rejected, which
+		// lets one client query serve several connections that expose
+		// different subsets of fields.
 		for _, name := range *args.FilterTextFields {
-			filterFields[name] = true
+			if _, ok := c.FilterTextFields[name]; ok {
+				filterFields[name] = true
+			}
+		}
+		// Ignoring every name is different: the filter would match nothing and
+		// the connection would come back empty, which reads as "no results"
+		// rather than "you asked to filter on fields this connection does not
+		// have".
+		if len(filterFields) == 0 {
+			return nil, graphql.NewClientError(
+				"none of the requested filter fields exist; this connection can filter on %s",
+				quotedNames(c.FilterTextFields))
 		}
 	} else {
-		for name, _ := range c.FilterTextFields {
+		for name := range c.FilterTextFields {
 			filterFields[name] = true
 		}
 	}
@@ -714,9 +744,12 @@ func (c *connectionContext) applySort(ctx context.Context, nodes []interface{}, 
 	}
 
 	sortField, ok := c.SortFields[*args.SortBy]
-	// If the field wasn't registered, it's an unknown sort field.
+	// If the field wasn't registered, it's an unknown sort field. This is a
+	// client error rather than an internal one: the client named something that
+	// does not exist, and it can only fix that if it is told which names do.
 	if !ok {
-		return nil, fmt.Errorf("unknown sort field %s", *args.SortBy)
+		return nil, graphql.NewClientError("unknown sort field %q; this connection can sort by %s",
+			*args.SortBy, quotedNames(c.SortFields))
 	}
 
 	// sortValues is the slice we'll be sorting (with the sorted values) in order to figure out node order.
@@ -1590,4 +1623,18 @@ func (sb *schemaBuilder) buildPaginatedArgParser(originalArgType reflect.Type) (
 		},
 		Type: typ,
 	}, argType, nil
+}
+
+// quotedNames renders a set of field names for an error message, sorted so the
+// message is the same every time.
+func quotedNames(fields map[string]*graphql.Field) string {
+	if len(fields) == 0 {
+		return "nothing"
+	}
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, strconv.Quote(name))
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }

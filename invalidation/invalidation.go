@@ -6,9 +6,16 @@
 // not have is any opinion about where change events come from. This package
 // supplies that missing half:
 //
-//   - a resolver calls Depend to say which keys the value it returned came from;
+//   - a resolver calls Depend to say which keys it is about to read, and then
+//     reads them;
 //   - something that changes data calls Invalidate with the same keys;
 //   - every live query that read those keys re-runs.
+//
+// The order matters: Depend before the read, never after. Invalidating a key
+// only reaches the computations already registered against it, so a resolver
+// that read at one moment and registered at a later one misses anything that
+// happened in between and serves a stale value until the next, unrelated
+// change to the same key.
 //
 // A key is an opaque string, and its meaning is entirely yours: "user:42",
 // "table:orders", a tenant id, whatever granularity you want to invalidate at.
@@ -73,10 +80,15 @@ func New(source Source) *Invalidator {
 	}
 }
 
-// Depend records that the computation running in ctx read the values behind
+// Depend records that the computation running in ctx reads the values behind
 // keys, so that it re-runs when any of them is invalidated.
 //
-// Call it from a resolver, with the keys whose data the resolver just read.
+// Call it from a resolver, with the keys it is about to read, **before** the
+// read. Invalidating a key only reaches the computations already registered
+// against it, so registering afterwards drops any change that happened in the
+// window between the read and the registration — and the live query then serves
+// a stale value until something else invalidates the same key.
+//
 // Outside a live query it does nothing, so a resolver need not know whether it
 // is being executed for a one-off request or a subscription.
 func (i *Invalidator) Depend(ctx context.Context, keys ...string) {
