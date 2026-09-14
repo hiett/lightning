@@ -342,38 +342,84 @@ func (c *transportWSConn) rootType(kind string) (Type, error) {
 // runStream executes one operation and, for a subscription, keeps re-executing
 // it until the client unsubscribes or the connection goes away.
 func (c *transportWSConn) runStream(ctx context.Context, id string, query *Query, root Type, payload subscribePayload) {
-	live := query.Kind == "subscription"
+	if query.Kind == "subscription" {
+		c.runLive(ctx, id, query, root, payload)
+	} else {
+		c.runOnce(ctx, id, query, root, payload)
+	}
 
+	// A client that cancelled the stream already removed it and expects
+	// nothing further; a stream that finished on its own owes a complete.
+	if c.removeStream(id) {
+		c.write(transportWSMessage{ID: id, Type: msgComplete})
+	}
+}
+
+// execute runs the operation once and returns the result.
+func (c *transportWSConn) execute(ctx context.Context, id string, query *Query, root Type, payload subscribePayload, initial bool) (interface{}, error) {
+	ctx = batch.WithBatching(ctx)
+
+	middlewares := append([]MiddlewareFunc(nil), c.handler.middlewares...)
+	middlewares = append(middlewares, func(input *ComputationInput, next MiddlewareNextFunc) *ComputationOutput {
+		output := next(input)
+		output.Current, output.Error = c.handler.executor.Execute(input.Ctx, root, nil, input.ParsedQuery)
+		return output
+	})
+
+	output := RunMiddlewares(middlewares, &ComputationInput{
+		Ctx:                  ctx,
+		Id:                   id,
+		ParsedQuery:          query,
+		IsInitialComputation: initial,
+		Query:                payload.Query,
+		Variables:            payload.Variables,
+		Extensions:           payload.Extensions,
+	})
+	return output.Current, output.Error
+}
+
+// runOnce serves a query or a mutation: execute, send the result, done.
+//
+// It deliberately does not use a reactive rerunner. Nothing here wants
+// re-execution, and reactive.AddDependency and reactive.Cache both work outside
+// one, so running directly avoids holding a computation open for an operation
+// that will never run again.
+func (c *transportWSConn) runOnce(ctx context.Context, id string, query *Query, root Type, payload subscribePayload) {
+	result, err := c.execute(ctx, id, query, root, payload, true)
+	if err != nil {
+		if ErrorCause(err) != context.Canceled {
+			c.writeErrors(id, AsResponseErrors(err))
+		}
+		return
+	}
+
+	c.write(transportWSMessage{
+		ID:      id,
+		Type:    msgNext,
+		Payload: mustMarshalPayload(&Response{Data: result, HasData: true}),
+	})
+}
+
+// runLive serves a subscription: execute, send the result, and do it again
+// every time a resource the execution read is invalidated.
+//
+// An error ends the stream with an error message, which the protocol treats as
+// terminal for that operation. A subscription that wants to survive a transient
+// failure should retry inside its resolver.
+func (c *transportWSConn) runLive(ctx context.Context, id string, query *Query, root Type, payload subscribePayload) {
 	var once sync.Once
 	finished := make(chan struct{})
 	done := func() { once.Do(func() { close(finished) }) }
 
+	initial := true
 	runner := reactive.NewRerunner(ctx, func(ctx context.Context) (interface{}, error) {
-		ctx = batch.WithBatching(ctx)
+		result, err := c.execute(ctx, id, query, root, payload, initial)
+		initial = false
 
-		middlewares := append([]MiddlewareFunc(nil), c.handler.middlewares...)
-		middlewares = append(middlewares, func(input *ComputationInput, next MiddlewareNextFunc) *ComputationOutput {
-			output := next(input)
-			output.Current, output.Error = c.handler.executor.Execute(input.Ctx, root, nil, input.ParsedQuery)
-			return output
-		})
-
-		output := RunMiddlewares(middlewares, &ComputationInput{
-			Ctx:                  ctx,
-			Id:                   id,
-			ParsedQuery:          query,
-			IsInitialComputation: true,
-			Query:                payload.Query,
-			Variables:            payload.Variables,
-			Extensions:           payload.Extensions,
-		})
-
-		if err := output.Error; err != nil {
-			if ErrorCause(err) == context.Canceled {
-				done()
-				return nil, err
+		if err != nil {
+			if ErrorCause(err) != context.Canceled {
+				c.writeErrors(id, AsResponseErrors(err))
 			}
-			c.writeErrors(id, AsResponseErrors(err))
 			done()
 			return nil, err
 		}
@@ -381,14 +427,8 @@ func (c *transportWSConn) runStream(ctx context.Context, id string, query *Query
 		c.write(transportWSMessage{
 			ID:      id,
 			Type:    msgNext,
-			Payload: mustMarshalPayload(&Response{Data: output.Current, HasData: true}),
+			Payload: mustMarshalPayload(&Response{Data: result, HasData: true}),
 		})
-
-		if !live {
-			done()
-			// Returning an error stops the rerunner; a query is executed once.
-			return nil, errStreamComplete
-		}
 		return nil, nil
 	}, c.handler.minRerunInterval, false)
 
@@ -397,17 +437,7 @@ func (c *transportWSConn) runStream(ctx context.Context, id string, query *Query
 	case <-ctx.Done():
 	}
 	runner.Stop()
-
-	// The client cancelling the stream already removed it and sent nothing; a
-	// stream that finished on its own owes the client a complete.
-	if c.removeStream(id) {
-		c.write(transportWSMessage{ID: id, Type: msgComplete})
-	}
 }
-
-// errStreamComplete stops a rerunner after a single execution. It never reaches
-// a client.
-var errStreamComplete = fmt.Errorf("graphql: operation complete")
 
 func (c *transportWSConn) write(message transportWSMessage) {
 	c.writeMu.Lock()
