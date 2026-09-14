@@ -18,8 +18,9 @@ type Type interface {
 // Scalar is a leaf value.  A custom "Unwrapper" can be attached to the scalar
 // so it can have a custom unwrapping (if nil we will use the default unwrapper).
 type Scalar struct {
-	Type      string
-	Unwrapper func(interface{}) (interface{}, error)
+	Type        string
+	Description string
+	Unwrapper   func(interface{}) (interface{}, error)
 }
 
 func (s *Scalar) isType() {}
@@ -51,6 +52,10 @@ type Object struct {
 	Description string
 	KeyField    *Field
 	Fields      map[string]*Field
+
+	// Interfaces holds every interface this object declares it implements,
+	// keyed by interface name.
+	Interfaces map[string]*Interface
 }
 
 func (o *Object) isType() {}
@@ -92,6 +97,32 @@ func (n *NonNull) String() string {
 	return fmt.Sprintf("%s!", n.Type)
 }
 
+// Interface is an abstract type: a set of fields that several object types
+// each promise to provide.
+//
+// A value of an interface type is always a value of one of its PossibleTypes;
+// which one is decided at execution time by the interface's TypeResolver.
+type Interface struct {
+	Name        string
+	Description string
+	Fields      map[string]*Field
+
+	// PossibleTypes holds every object type that implements this interface,
+	// keyed by type name.
+	PossibleTypes map[string]*Object
+
+	// TypeResolver maps a Go value flowing through a field of this interface
+	// type to the name of the concrete object type that should be used to
+	// resolve it. It must return a name present in PossibleTypes.
+	TypeResolver func(ctx context.Context, value interface{}) (string, error)
+}
+
+func (i *Interface) isType() {}
+
+func (i *Interface) String() string {
+	return i.Name
+}
+
 // Union is a option between multiple types
 type Union struct {
 	Name        string
@@ -113,6 +144,7 @@ var _ Type = &InputObject{}
 var _ Type = &NonNull{}
 var _ Type = &Enum{}
 var _ Type = &Union{}
+var _ Type = &Interface{}
 
 // A Resolver calculates the value of a field of an object
 type Resolver func(ctx context.Context, source, args interface{}, selectionSet *SelectionSet) (interface{}, error)
@@ -130,6 +162,17 @@ type Field struct {
 	Args           map[string]Type
 	ParseArguments func(json interface{}) (interface{}, error)
 
+	// Description is the field's documentation, surfaced by introspection and
+	// printed into exported SDL.
+	Description string
+
+	// ArgDescriptions holds documentation for individual arguments, keyed by
+	// argument name.
+	ArgDescriptions map[string]string
+
+	// DeprecationReason, when non-empty, marks the field deprecated.
+	DeprecationReason string
+
 	UseBatchFunc func(context.Context) bool
 	Batch        bool
 	External     bool
@@ -145,8 +188,9 @@ type Field struct {
 }
 
 type Schema struct {
-	Query    Type
-	Mutation Type
+	Query        Type
+	Mutation     Type
+	Subscription Type
 }
 
 // SelectionSet represents a core GraphQL query

@@ -70,6 +70,16 @@ func (pe *pathError) Error() string {
 	return buffer.String()
 }
 
+// responsePath returns the error's path in response order, outermost segment
+// first, as the specification requires an error's "path" to be written.
+func (pe *pathError) responsePath() []interface{} {
+	path := make([]interface{}, 0, len(pe.path))
+	for i := len(pe.path) - 1; i >= 0; i-- {
+		path = append(path, pe.path[i])
+	}
+	return path
+}
+
 func (pe *pathError) Reason() string {
 	var buffer bytes.Buffer
 	writePath(pe, &buffer)

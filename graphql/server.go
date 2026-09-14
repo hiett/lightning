@@ -74,6 +74,30 @@ type conn struct {
 	alwaysSpawnGoroutineFunc AlwaysSpawnGoroutineFunc
 	minRerunIntervalFunc     RerunIntervalFunc
 	maxSubscriptions         int
+
+	// Validators are built on first use, because the schemas are not final
+	// until every ConnectionOption has been applied.
+	validatorOnce     sync.Once
+	queryValidator    *Validator
+	mutationValidator *Validator
+	validatorErr      error
+}
+
+// validators returns the query and mutation validators for this connection,
+// building them once on first use.
+func (c *conn) validators() (query, mutation *Validator, err error) {
+	c.validatorOnce.Do(func() {
+		c.queryValidator, c.validatorErr = NewValidator(c.schema)
+		if c.validatorErr != nil {
+			return
+		}
+		if c.mutationSchema == c.schema {
+			c.mutationValidator = c.queryValidator
+			return
+		}
+		c.mutationValidator, c.validatorErr = NewValidator(c.mutationSchema)
+	})
+	return c.queryValidator, c.mutationValidator, c.validatorErr
 }
 
 type inEnvelope struct {
@@ -91,13 +115,15 @@ type outEnvelope struct {
 }
 
 type subscribeMessage struct {
-	Query     string                 `json:"query"`
-	Variables map[string]interface{} `json:"variables"`
+	Query         string                 `json:"query"`
+	OperationName string                 `json:"operationName"`
+	Variables     map[string]interface{} `json:"variables"`
 }
 
 type mutateMessage struct {
-	Query     string                 `json:"query"`
-	Variables map[string]interface{} `json:"variables"`
+	Query         string                 `json:"query"`
+	OperationName string                 `json:"operationName"`
+	Variables     map[string]interface{} `json:"variables"`
 }
 
 func (c *conn) writeOrClose(out outEnvelope) {
@@ -140,7 +166,13 @@ func (c *conn) handleSubscribe(in *inEnvelope) error {
 
 	tags := map[string]string{"url": c.url, "query": subscribe.Query, "queryVariables": mustMarshalJson(subscribe.Variables), "id": id}
 
-	query, err := Parse(subscribe.Query, subscribe.Variables)
+	queryValidator, _, err := c.validators()
+	if err != nil {
+		c.logger.Error(c.ctx, err, tags)
+		return err
+	}
+
+	query, err := queryValidator.Parse(subscribe.Query, subscribe.Variables, subscribe.OperationName)
 	if query != nil {
 		tags["queryType"] = query.Kind
 		tags["queryName"] = query.Name
@@ -268,7 +300,13 @@ func (c *conn) handleMutate(in *inEnvelope) error {
 
 	tags := map[string]string{"url": c.url, "query": mutate.Query, "queryVariables": mustMarshalJson(mutate.Variables), "id": id}
 
-	query, err := Parse(mutate.Query, mutate.Variables)
+	_, mutationValidator, err := c.validators()
+	if err != nil {
+		c.logger.Error(c.ctx, err, tags)
+		return err
+	}
+
+	query, err := mutationValidator.Parse(mutate.Query, mutate.Variables, mutate.OperationName)
 	if query != nil {
 		tags["queryType"] = query.Kind
 		tags["queryName"] = query.Name
