@@ -402,7 +402,19 @@ func (s *Schema) Build() (*graphql.Schema, error) {
 		return nil, err
 	}
 	if len(nodeTypes) > 0 {
-		s.registerNodeIDFields(nodeTypes)
+		// The Node interface is generated, so its name must not already be
+		// taken; two types with one name is not a schema.
+		if existing, taken := s.objects[NodeTypeName]; taken {
+			return nil, fmt.Errorf("the name %s is reserved for the Relay Node interface, but it is registered as an object for %T",
+				NodeTypeName, existing.Type)
+		}
+		if _, taken := s.interfaces[NodeTypeName]; taken {
+			return nil, fmt.Errorf("the name %s is reserved for the Relay Node interface and cannot be registered", NodeTypeName)
+		}
+
+		if err := s.registerNodeIDFields(nodeTypes); err != nil {
+			return nil, err
+		}
 
 		// Build every node type up front. A type reachable only through the
 		// node field would otherwise never be built, and the Node interface

@@ -243,3 +243,48 @@ func (slashCodec) Decode(globalID string) (string, string, error) {
 	}
 	return "", "", errors.New("malformed global id")
 }
+
+// TestNodeRegistrationErrorsAreErrors checks that a mistake in a Node
+// registration comes back from Build rather than panicking out of it.
+func TestNodeRegistrationErrorsAreErrors(t *testing.T) {
+	t.Run("an id field already registered", func(t *testing.T) {
+		schema := schemabuilder.NewSchema()
+		author := schema.Object("Author", Author{})
+		author.FieldFunc("id", func(a *Author) string { return a.Key })
+		author.Node(
+			func(a *Author) string { return a.Key },
+			func(id string) (*Author, error) { return nil, nil },
+		)
+		schema.Query().FieldFunc("first", func() *Author { return nil })
+
+		_, err := schema.Build()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "already registers an id field")
+	})
+
+	t.Run("the Node name taken by an object", func(t *testing.T) {
+		schema := schemabuilder.NewSchema()
+		schema.Object("Node", Book{})
+		author := schema.Object("Author", Author{})
+		author.Node(
+			func(a *Author) string { return a.Key },
+			func(id string) (*Author, error) { return nil, nil },
+		)
+		schema.Query().FieldFunc("first", func() *Author { return nil })
+
+		_, err := schema.Build()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "reserved for the Relay Node interface")
+	})
+
+	t.Run("a nil registration function", func(t *testing.T) {
+		schema := schemabuilder.NewSchema()
+		author := schema.Object("Author", Author{})
+		author.Node(nil, func(id string) (*Author, error) { return nil, nil })
+		schema.Query().FieldFunc("first", func() *Author { return nil })
+
+		_, err := schema.Build()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "non-nil function")
+	})
+}

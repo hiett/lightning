@@ -175,8 +175,8 @@ func makeLocalIDFunc(name string, goType reflect.Type, fn interface{}) (func(con
 	const shape = "func(*T) string, func(*T) (string, error) or func(context.Context, *T) (string, error)"
 
 	value := reflect.ValueOf(fn)
-	if !value.IsValid() || value.Kind() != reflect.Func {
-		return nil, fmt.Errorf("node type %s: local id must be a function; expected %s", name, shape)
+	if !value.IsValid() || value.Kind() != reflect.Func || value.IsNil() {
+		return nil, fmt.Errorf("node type %s: local id must be a non-nil function; expected %s", name, shape)
 	}
 	typ := value.Type()
 
@@ -233,8 +233,8 @@ func makeFetchFunc(name string, goType reflect.Type, fn interface{}) (func(conte
 	const shape = "func(context.Context, string) (*T, error) or func(string) (*T, error)"
 
 	value := reflect.ValueOf(fn)
-	if !value.IsValid() || value.Kind() != reflect.Func {
-		return nil, fmt.Errorf("node type %s: fetcher must be a function; expected %s", name, shape)
+	if !value.IsValid() || value.Kind() != reflect.Func || value.IsNil() {
+		return nil, fmt.Errorf("node type %s: fetcher must be a non-nil function; expected %s", name, shape)
 	}
 	typ := value.Type()
 
@@ -277,10 +277,16 @@ func makeFetchFunc(name string, goType reflect.Type, fn interface{}) (func(conte
 // The field is built with reflect.MakeFunc because its source parameter type is
 // only known at run time; it then goes through the ordinary FieldFunc path, so
 // it behaves exactly like a hand-written field.
-func (s *Schema) registerNodeIDFields(nodeTypes map[string]*nodeType) {
+func (s *Schema) registerNodeIDFields(nodeTypes map[string]*nodeType) error {
 	for name, node := range nodeTypes {
 		object := s.objects[name]
 		codec := s.globalIDCodec
+
+		// FieldFunc panics on a duplicate, and a schema mistake should be an
+		// error from Build rather than a panic out of it.
+		if _, taken := object.Methods["id"]; taken {
+			return fmt.Errorf("node type %s already registers an id field; Node defines id as the global identifier, so remove the other one", name)
+		}
 
 		signature := reflect.FuncOf(
 			[]reflect.Type{contextInterface, reflect.PointerTo(node.goType)},
@@ -307,6 +313,7 @@ func (s *Schema) registerNodeIDFields(nodeTypes map[string]*nodeType) {
 
 		object.FieldFunc("id", resolve.Interface())
 	}
+	return nil
 }
 
 func encodeGlobalID(ctx context.Context, codec GlobalIDCodec, node *nodeType, source interface{}) (string, error) {
