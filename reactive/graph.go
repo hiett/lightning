@@ -157,7 +157,15 @@ func (n *node) addOut(to *node) {
 	}
 
 	// invalidate to if n is invalidated
-	shouldInvalidate := n.invalidated && !to.invalidated
+	//
+	// A released node is excluded. release() invalidates before it tears down,
+	// which is bookkeeping for its own teardown rather than news that anything
+	// changed — and for a Resource, whose release is triggered simply by its
+	// last dependent going away, there is nothing stale about it at all.
+	// Propagating that would invalidate a fresh computation the instant it
+	// depended on the resource, which would re-run, depend again, and spin for
+	// ever.
+	shouldInvalidate := n.invalidated && !n.released && !to.invalidated
 	// Release out if we did not add a dependency. This fulfills the contract
 	// that after one call to addOut, n is guaranteed to be eventually released.
 	shouldRelease := len(n.out) == 0

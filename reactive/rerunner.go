@@ -137,12 +137,25 @@ func NewResource() *Resource {
 	}
 }
 
-// Invalidate permanently invalidates r
+// Invalidate permanently invalidates r.
+//
+// The resource is finished afterwards: it is marked invalidated for good, and a
+// computation that depends on it from then on is immediately invalidated, which
+// for a rerunner means an endless loop of re-running and being invalidated
+// again. Use it for a resource that represents one moment — a timer, a
+// one-shot event — and create a new one next time.
+//
+// To signal that the data behind a long-lived resource changed, use Strobe.
 func (r *Resource) Invalidate() {
 	go r.invalidate()
 }
 
-// Store invalidates all computations currently depending on r
+// Strobe invalidates every computation currently depending on r, leaving r
+// usable.
+//
+// This is what a resource standing for a piece of data wants: the data changed,
+// everything that read it must re-run, and the next read depends on the same
+// resource again.
 func (r *Resource) Strobe() {
 	go r.strobe()
 }
