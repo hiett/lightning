@@ -17,12 +17,14 @@ type pathError struct {
 	path  []interface{}
 }
 
+// nestPathErrorMulti records that err came from a field several levels down.
+//
+// A client-safe error is decorated like any other. It used to be returned
+// undecorated, on the grounds that its message is for human consumption and
+// prefixing a path would spoil it — but the path now lives in a structured
+// field of the response rather than in the message, and a client-safe error is
+// exactly the kind a client most needs the path of.
 func nestPathErrorMulti(path []interface{}, err error) error {
-	// Don't nest SanitzedError's, as they are intended for human consumption.
-	if se, ok := err.(SanitizedError); ok {
-		return se
-	}
-
 	if pe, ok := err.(*pathError); ok {
 		return &pathError{
 			inner: pe.inner,
@@ -37,11 +39,6 @@ func nestPathErrorMulti(path []interface{}, err error) error {
 }
 
 func nestPathError(key interface{}, err error) error {
-	// Don't nest SanitzedError's, as they are intended for human consumption.
-	if se, ok := err.(SanitizedError); ok {
-		return se
-	}
-
 	if pe, ok := err.(*pathError); ok {
 		return &pathError{
 			inner: pe.inner,

@@ -58,7 +58,14 @@ func WrapAsSafeError(err error, format string, a ...interface{}) error {
 }
 
 // SanitizeError returns a sanitized error message for an error.
+//
+// It looks through a path decoration, so that an error which was safe to show a
+// client stays safe to show them after the executor has recorded where it came
+// from.
 func SanitizeError(err error) string {
+	if pe, ok := err.(*pathError); ok {
+		return SanitizeError(pe.inner)
+	}
 	if sanitized, ok := err.(SanitizedError); ok {
 		return sanitized.SanitizedError()
 	}

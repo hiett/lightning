@@ -31,6 +31,9 @@
   },
   "devDependencies": {
     "@types/node": "^22",
+    "@types/relay-runtime": "^18",
+    "graphql": "^16",
+    "relay-runtime": "^18",
     "typescript": "^5",
     "vitest": "^2"
   },

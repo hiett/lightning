@@ -27,7 +27,7 @@ import {
   LightningConnection,
   type LightningConnectionOptions,
 } from "./connection.js";
-import { merge, stripKeys, type JsonValue, type MergeValue } from "./merge.js";
+import { merge, stripKeys, type MergeValue } from "./merge.js";
 import type { OperationMessage } from "./protocol.js";
 
 export interface LightningNetworkOptions extends LightningConnectionOptions {

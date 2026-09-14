@@ -102,9 +102,12 @@ function mergeReplacement(update: JsonValue[]): MergeValue {
     // server, so it replaces the previous subtree outright -- recursing into it
     // would be wrong, not merely wasteful.
     const value = update[0];
-    return typeof value === "object" && value !== null
-      ? Object.freeze(value)
-      : value;
+    if (typeof value === "object" && value !== null) {
+      // Frozen in place rather than through Object.freeze's return value, whose
+      // Readonly<T> is not the same type going back out.
+      Object.freeze(value);
+    }
+    return value;
   }
 
   if (update.length === 0) {
@@ -194,7 +197,8 @@ function mergeArray(
     merged[index] = merge(merged[index], update[key]);
   }
 
-  return Object.freeze(merged);
+  Object.freeze(merged);
+  return merged;
 }
 
 /**
@@ -221,7 +225,8 @@ function mergeMap(original: MergeValue, update: JsonObject): MergeValue {
     }
   }
 
-  return Object.freeze(merged);
+  Object.freeze(merged);
+  return merged;
 }
 
 /**
