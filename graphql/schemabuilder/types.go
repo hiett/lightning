@@ -339,6 +339,15 @@ type method struct {
 
 	Fn interface{}
 
+	// Description documents the field; see Description.
+	Description string
+
+	// ArgDescriptions documents individual arguments; see ArgDescription.
+	ArgDescriptions map[string]string
+
+	// DeprecationReason marks the field deprecated; see Deprecated.
+	DeprecationReason string
+
 	// Whether or not the FieldFunc is paginated.
 	Paginated bool
 

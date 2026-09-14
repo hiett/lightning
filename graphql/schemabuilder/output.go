@@ -81,6 +81,9 @@ func (sb *schemaBuilder) buildStruct(typ reflect.Type) error {
 		if err != nil {
 			return fmt.Errorf("bad field %s on type %s: %s", fieldInfo.Name, typ, err)
 		}
+		docs := parseFieldDocs(field)
+		built.Description = docs.description
+		built.DeprecationReason = docs.deprecationReason
 		object.Fields[fieldInfo.Name] = built
 		if fieldInfo.KeyField {
 			if object.KeyField != nil {
@@ -141,6 +144,25 @@ func (sb *schemaBuilder) buildStruct(typ reflect.Type) error {
 			return fmt.Errorf("bad method %s on type %s: %s", name, typ, err)
 		}
 		object.Fields[name] = built
+	}
+
+	// Carry documentation from each registration onto the field it produced.
+	// Doing it here rather than inside each build path means every kind of
+	// field — plain, batch, paginated — is documented the same way.
+	for name, m := range methods {
+		built, ok := object.Fields[name]
+		if !ok {
+			continue
+		}
+		if m.Description != "" {
+			built.Description = m.Description
+		}
+		if len(m.ArgDescriptions) > 0 {
+			built.ArgDescriptions = m.ArgDescriptions
+		}
+		if m.DeprecationReason != "" {
+			built.DeprecationReason = m.DeprecationReason
+		}
 	}
 
 	if objectKey != "" {

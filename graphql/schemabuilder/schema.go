@@ -76,14 +76,18 @@ func NewSchemaWithName(name string) *Schema {
 //	  "two":   enumType(2),
 //	  "three": enumType(3),
 //	})
-func (s *Schema) Enum(val interface{}, enumMap interface{}) {
+func (s *Schema) Enum(val interface{}, enumMap interface{}, options ...EnumOption) {
 	typ := reflect.TypeOf(val)
 	if s.enumTypes == nil {
 		s.enumTypes = make(map[reflect.Type]*EnumMapping)
 	}
 
 	eMap, rMap := getEnumMap(enumMap, typ)
-	s.enumTypes[typ] = &EnumMapping{Map: eMap, ReverseMap: rMap}
+	mapping := &EnumMapping{Map: eMap, ReverseMap: rMap}
+	for _, opt := range options {
+		opt(mapping)
+	}
+	s.enumTypes[typ] = mapping
 }
 
 func getEnumMap(enumMap interface{}, typ reflect.Type) (map[string]interface{}, map[interface{}]string) {

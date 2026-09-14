@@ -374,3 +374,53 @@ three bugs first.
 Node types inside connections implement `Node` automatically when they register with
 `(*Object).Node` — the connection reuses the same built `*graphql.Object`, so no extra work was
 needed for `PLAN.md` item 4.
+
+## D19. Descriptions and deprecation are authored where the thing is written
+
+Phase 8 asks this decision to be recorded. There are two ways to write a field, so there are two
+ways to document one:
+
+- **A field derived from a Go struct field takes struct tags**, because the documentation then sits
+  next to the thing it documents:
+
+  ```go
+  type User struct {
+      Name  string `description:"The user's display name."`
+      Email string `description:"Their address." deprecated:"Use emails instead."`
+  }
+  ```
+
+  `description` and `deprecated` are separate tags rather than options inside the existing
+  comma-separated `graphql:"..."` tag, because prose contains commas. A bare `deprecated:""` means
+  deprecated with the specification's default reason, "No longer supported".
+
+- **A field registered with `FieldFunc` takes options**, because there is no struct field to hang a
+  tag on:
+
+  ```go
+  user.FieldFunc("friends", resolve,
+      schemabuilder.Description("Everyone this user follows."),
+      schemabuilder.ArgDescription("limit", "How many to return."),
+      schemabuilder.Deprecated("Use following instead."))
+  ```
+
+Object types use `(*Object).Describe`, interfaces `(*InterfaceObject).Describe`, and enums take
+`EnumDescription`, `EnumValueDescriptions` and `EnumValueDeprecations` options on `(*Schema).Enum`.
+
+Documentation is applied to built fields in one place, after `buildStruct`'s method loop, rather
+than inside each of `buildFunction` / `buildBatchFunction` / `buildPaginatedField`, so every kind of
+field is documented the same way.
+
+In printed SDL, a field with documented arguments switches to the multi-line argument form, because
+an argument description cannot sit inside a one-line list.
+
+## D20. SDL export is a library helper, not a command
+
+`PLAN.md` offered "a small `cmd/` tool or exported helper". A command cannot work: the schema is Go
+code in the consuming project, and no binary in this repository can import it.
+
+`graphql.WriteSchemaFile(schema, path)` and `graphql.WriteSchema(w, schema)` are the helpers. A
+consuming project wires one up in a three-line `main` and calls it from `go:generate`, which
+`example/` demonstrates. The file is written atomically — rendered to a temporary file in the same
+directory, then renamed — so a failed build step leaves the previous schema in place rather than a
+truncated one.

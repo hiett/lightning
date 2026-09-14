@@ -333,7 +333,7 @@ func (p *sdlPrinter) printType(b *strings.Builder, name string, typ Type) error 
 		return nil
 
 	case *Enum:
-		writeDescription(b, "", "")
+		writeDescription(b, "", typ.Description)
 		fmt.Fprintf(b, "enum %s {\n", name)
 		values := append([]string(nil), typ.Values...)
 		sort.Strings(values)
@@ -341,7 +341,8 @@ func (p *sdlPrinter) printType(b *strings.Builder, name string, typ Type) error 
 			if !isValidGraphQLName(value) {
 				return fmt.Errorf("enum %s has value %q, which is not a legal GraphQL name", name, value)
 			}
-			fmt.Fprintf(b, "  %s\n", value)
+			writeDescription(b, "  ", typ.Descriptions[value])
+			fmt.Fprintf(b, "  %s%s\n", value, deprecationSuffix(typ.DeprecationReasons[value]))
 		}
 		b.WriteString("}\n\n")
 		return nil
@@ -387,7 +388,7 @@ func (p *sdlPrinter) printType(b *strings.Builder, name string, typ Type) error 
 		return nil
 
 	case *InputObject:
-		writeDescription(b, "", "")
+		writeDescription(b, "", typ.Description)
 		fmt.Fprintf(b, "input %s {\n", name)
 
 		fieldNames := make([]string, 0, len(typ.InputFields))
@@ -403,6 +404,7 @@ func (p *sdlPrinter) printType(b *strings.Builder, name string, typ Type) error 
 			if err != nil {
 				return fmt.Errorf("input %s field %s: %w", name, fieldName, err)
 			}
+			writeDescription(b, "  ", typ.FieldDescriptions[fieldName])
 			fmt.Fprintf(b, "  %s: %s\n", fieldName, ref)
 		}
 		b.WriteString("}\n\n")
@@ -435,18 +437,21 @@ func (p *sdlPrinter) printFields(b *strings.Builder, fields map[string]*Field) e
 			return fmt.Errorf("field %s: %w", name, err)
 		}
 
-		args, err := p.printArgs(field.Args)
+		args, err := p.printArgs(field)
 		if err != nil {
 			return fmt.Errorf("field %s: %w", name, err)
 		}
 
 		writeDescription(b, "  ", field.Description)
-		fmt.Fprintf(b, "  %s%s: %s%s\n", name, args, ref, deprecationDirective(field))
+		fmt.Fprintf(b, "  %s%s: %s%s\n", name, args, ref, deprecationSuffix(field.DeprecationReason))
 	}
 	return nil
 }
 
-func (p *sdlPrinter) printArgs(args map[string]Type) (string, error) {
+// printArgs renders a field's argument list. Documented arguments force the
+// multi-line form, because a description cannot sit inside a one-line list.
+func (p *sdlPrinter) printArgs(field *Field) (string, error) {
+	args := field.Args
 	if len(args) == 0 {
 		return "", nil
 	}
@@ -457,22 +462,46 @@ func (p *sdlPrinter) printArgs(args map[string]Type) (string, error) {
 	}
 	sort.Strings(names)
 
-	parts := make([]string, 0, len(names))
+	documented := false
+	for _, name := range names {
+		if field.ArgDescriptions[name] != "" {
+			documented = true
+			break
+		}
+	}
+
+	if !documented {
+		parts := make([]string, 0, len(names))
+		for _, name := range names {
+			ref, err := p.ref(args[name])
+			if err != nil {
+				return "", fmt.Errorf("arg %s: %w", name, err)
+			}
+			parts = append(parts, fmt.Sprintf("%s: %s", name, ref))
+		}
+		return "(" + strings.Join(parts, ", ") + ")", nil
+	}
+
+	var b strings.Builder
+	b.WriteString("(\n")
 	for _, name := range names {
 		ref, err := p.ref(args[name])
 		if err != nil {
 			return "", fmt.Errorf("arg %s: %w", name, err)
 		}
-		parts = append(parts, fmt.Sprintf("%s: %s", name, ref))
+		writeDescription(&b, "    ", field.ArgDescriptions[name])
+		fmt.Fprintf(&b, "    %s: %s\n", name, ref)
 	}
-	return "(" + strings.Join(parts, ", ") + ")", nil
+	b.WriteString("  )")
+	return b.String(), nil
 }
 
-func deprecationDirective(field *Field) string {
-	if field.DeprecationReason == "" {
+// deprecationSuffix renders the @deprecated directive for a non-empty reason.
+func deprecationSuffix(reason string) string {
+	if reason == "" {
 		return ""
 	}
-	return fmt.Sprintf(" @deprecated(reason: %s)", quoteGraphQLString(field.DeprecationReason))
+	return fmt.Sprintf(" @deprecated(reason: %s)", quoteGraphQLString(reason))
 }
 
 func scalarDescription(s *Scalar) string {

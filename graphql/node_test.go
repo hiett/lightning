@@ -189,8 +189,9 @@ func TestNodeSchemaShape(t *testing.T) {
 	require.Contains(t, sdl, "interface Node {\n  id: ID!\n}", "printed schema:\n%s", sdl)
 	require.Contains(t, sdl, "type Author implements Node {")
 	require.Contains(t, sdl, "type Book implements Node {")
-	require.Contains(t, sdl, "  node(id: ID!): Node\n")
-	require.Contains(t, sdl, "  nodes(ids: [ID!]!): [Node]!\n")
+	// Documented arguments are printed in the multi-line form.
+	require.Contains(t, sdl, "    id: ID!\n  ): Node\n")
+	require.Contains(t, sdl, "    ids: [ID!]!\n  ): [Node]!\n")
 
 	astSchema, err := graphql.ASTSchema(built)
 	require.NoError(t, err)

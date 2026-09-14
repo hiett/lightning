@@ -30,6 +30,16 @@ type schemaBuilder struct {
 type EnumMapping struct {
 	Map        map[string]interface{}
 	ReverseMap map[interface{}]string
+
+	// Description documents the enum type; see EnumDescription.
+	Description string
+
+	// Descriptions documents individual values; see EnumValueDescriptions.
+	Descriptions map[string]string
+
+	// DeprecationReasons marks individual values deprecated; see
+	// EnumValueDeprecations.
+	DeprecationReasons map[string]string
 }
 
 // cachedType is a container for GraphQL datatype and the list of its fields
@@ -47,7 +57,13 @@ func (sb *schemaBuilder) getType(nodeType reflect.Type, forceListEntryNonNull bo
 	// Support scalars and optional scalars. Scalars have precedence over structs
 	// to have eg. time.Time function as a scalar.
 	if typeName, values, ok := sb.getEnum(nodeType); ok {
-		return &graphql.NonNull{Type: &graphql.Enum{Type: typeName, Values: values, ReverseMap: sb.enumMappings[nodeType].ReverseMap}}, nil
+		enum := &graphql.Enum{
+			Type:       typeName,
+			Values:     values,
+			ReverseMap: sb.enumMappings[nodeType].ReverseMap,
+		}
+		sb.enumMappings[nodeType].applyDocs(enum)
+		return &graphql.NonNull{Type: enum}, nil
 	}
 
 	// A *NodeRef is a value being returned through the Node interface.

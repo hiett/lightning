@@ -162,6 +162,12 @@ func (sb *schemaBuilder) getStructObjectFields(typ reflect.Type) (*graphql.Input
 			parser: parser,
 		}
 		argType.InputFields[fieldInfo.Name] = fieldArgTyp
+		if docs := parseFieldDocs(field); docs.description != "" {
+			if argType.FieldDescriptions == nil {
+				argType.FieldDescriptions = map[string]string{}
+			}
+			argType.FieldDescriptions[fieldInfo.Name] = docs.description
+		}
 	}
 
 	return argType, fields, nil
