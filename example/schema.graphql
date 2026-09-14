@@ -1,0 +1,197 @@
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+"""
+Whoever a task belongs to: a person or a team.
+"""
+interface Actor {
+  """
+  The name to show for this actor.
+  """
+  displayName: String!
+  id: ID!
+}
+
+"""
+A 64-bit signed integer, serialised as a decimal string because a JSON number cannot carry the full range without loss of precision.
+"""
+scalar Int64
+
+type Mutation {
+  """
+  Adds a task.
+  """
+  addTask(
+    """
+    The global id of the user or team it belongs to.
+    """
+    ownerId: ID!
+    """
+    What needs doing.
+    """
+    title: String!
+  ): Task
+  """
+  Marks a task done, or not done.
+  """
+  setTaskDone(
+    """
+    The new state.
+    """
+    done: Boolean!
+    """
+    The task's global id.
+    """
+    id: ID!
+  ): Task
+}
+
+"""
+An object with a globally unique identifier, which a client can refetch with the node field.
+"""
+interface Node {
+  id: ID!
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  pages: [String!]!
+  startCursor: String
+}
+
+type Query {
+  """
+  Looks up a single object by its global identifier.
+  """
+  node(
+    """
+    The object's global identifier.
+    """
+    id: ID!
+  ): Node
+  """
+  Looks up several objects by their global identifiers, in the order given.
+  """
+  nodes(
+    """
+    The objects' global identifiers.
+    """
+    ids: [ID!]!
+  ): [Node]!
+  """
+  Every task, oldest first.
+  """
+  tasks(after: String, before: String, filterText: String, filterTextFields: [String!], filterType: String, first: Int, last: Int, sortBy: String, sortOrder: SortOrder): TaskConnection!
+  """
+  The signed-in user. This example always signs in as Ada.
+  """
+  viewer: User
+}
+
+enum SortOrder {
+  asc
+  desc
+}
+
+type Subscription {
+  """
+  Every task, pushed again whenever any of them changes.
+  """
+  tasks(after: String, before: String, filterText: String, filterTextFields: [String!], filterType: String, first: Int, last: Int, sortBy: String, sortOrder: SortOrder): TaskConnection!
+}
+
+"""
+A unit of work.
+"""
+type Task implements Node {
+  added: Time!
+  """
+  Whether it has been done.
+  """
+  done: Boolean!
+  id: ID!
+  """
+  The type-local identifier. Use id for anything a client stores.
+  """
+  key: String!
+  """
+  Whoever the task belongs to.
+  """
+  owner: Actor
+  """
+  What needs doing.
+  """
+  title: String!
+}
+
+"""
+A paginated list of Task, following the Relay Cursor Connections specification.
+"""
+type TaskConnection {
+  edges: [TaskEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int64!
+}
+
+"""
+An edge in a Task connection.
+"""
+type TaskEdge {
+  """
+  A cursor for use in pagination.
+  """
+  cursor: String!
+  """
+  The item at the end of the edge.
+  """
+  node: Task!
+}
+
+"""
+A group of people.
+"""
+type Team implements Actor & Node {
+  """
+  The name to show for this actor.
+  """
+  displayName: String!
+  id: ID!
+  """
+  How many people are on it.
+  """
+  members: Int!
+  """
+  The team's display name.
+  """
+  name: String!
+}
+
+"""
+An instant in time, serialised as an RFC 3339 timestamp.
+"""
+scalar Time
+
+"""
+A person.
+"""
+type User implements Actor & Node {
+  """
+  The name to show for this actor.
+  """
+  displayName: String!
+  """
+  Where to reach them.
+  """
+  email: String!
+  id: ID!
+  """
+  The user's display name.
+  """
+  name: String!
+}
+
