@@ -41,7 +41,7 @@ what they read.
 | SDL export | none | `graphql.WriteSchemaFile` |
 | Subscriptions | a bespoke websocket protocol | that, plus `graphql-transport-ws` |
 | `operationName` | ignored | honoured |
-| Dependencies | ~20, several abandoned | 7, all current |
+| Dependencies | ~20, several abandoned | 6, all current |
 | Databases | `livesql` + `sqlgen` built in | none; bring your own invalidation source |
 
 `DECISIONS.md` records why each of those went the way it did.
