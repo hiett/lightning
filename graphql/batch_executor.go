@@ -395,32 +395,27 @@ func resolveListBatch(ctx context.Context, sources []interface{}, typ *List, sel
 // Traverses the Union type and resolves or creates work units to resolve
 // all of the sub-objects for all the provided sources.
 func resolveUnionBatch(ctx context.Context, sources []interface{}, typ *Union, selectionSet *SelectionSet, destinations []*outputNode) ([]*WorkUnit, error) {
+	if typ.TypeResolver == nil {
+		return nil, fmt.Errorf("union %s has no type resolver", typ.Name)
+	}
+
 	sourcesByType := make(map[string][]interface{}, len(typ.Types))
 	destinationsByType := make(map[string][]*outputNode, len(typ.Types))
+
 	for idx, src := range sources {
-		union := reflect.ValueOf(src)
-		if !union.IsValid() || (union.Kind() == reflect.Ptr && union.IsNil()) {
-			// Don't create a destination for any nil Unions types
+		name, concrete, err := typ.TypeResolver(src)
+		if err != nil {
+			return nil, err
+		}
+		if name == "" {
 			destinations[idx].Fill(nil)
 			continue
 		}
-
-		srcType := ""
-		if union.Kind() == reflect.Ptr && union.Elem().Kind() == reflect.Struct {
-			union = union.Elem()
+		if _, ok := typ.Types[name]; !ok {
+			return nil, fmt.Errorf("union %s resolved to %s, which is not one of its types", typ.Name, name)
 		}
-		for typString := range typ.Types {
-			inner := union.FieldByName(typString)
-			if inner.IsNil() {
-				continue
-			}
-			if srcType != "" {
-				return nil, fmt.Errorf("union type field should only return one value, but received: %s %s", srcType, typString)
-			}
-			srcType = typString
-			sourcesByType[srcType] = append(sourcesByType[srcType], inner.Interface())
-			destinationsByType[srcType] = append(destinationsByType[srcType], destinations[idx])
-		}
+		sourcesByType[name] = append(sourcesByType[name], concrete)
+		destinationsByType[name] = append(destinationsByType[name], destinations[idx])
 	}
 
 	// The whole selection set goes to the concrete type, exactly as it does for

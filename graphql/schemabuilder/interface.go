@@ -116,6 +116,45 @@ type interfaceMember struct {
 	fieldIndex int
 }
 
+// memberTypeResolver builds the function the executor uses to find which
+// concrete type a value of an abstract type carries.
+//
+// Members are matched by struct field index rather than by name, so an object
+// registered under a GraphQL name different from its Go type name still
+// resolves — and a value whose field is missing is a nil reflect.Value, which
+// matching by name would have panicked on.
+func memberTypeResolver(kind, name string, members []interfaceMember) func(interface{}) (string, interface{}, error) {
+	return func(source interface{}) (string, interface{}, error) {
+		value := reflect.ValueOf(source)
+		for value.Kind() == reflect.Ptr {
+			if value.IsNil() {
+				return "", nil, nil
+			}
+			value = value.Elem()
+		}
+		if !value.IsValid() || value.Kind() != reflect.Struct {
+			return "", nil, nil
+		}
+
+		found := ""
+		var concrete interface{}
+		for _, member := range members {
+			inner := value.Field(member.fieldIndex)
+			if inner.IsNil() {
+				continue
+			}
+			if found != "" {
+				return "", nil, fmt.Errorf(
+					"%s %s should carry exactly one type, but received both %s and %s",
+					kind, name, found, member.object.Name)
+			}
+			found = member.object.Name
+			concrete = inner.Interface()
+		}
+		return found, concrete, nil
+	}
+}
+
 // buildInterfaceStruct builds a graphql.Interface from a struct embedding the
 // Interface marker.
 func (sb *schemaBuilder) buildInterfaceStruct(typ reflect.Type) error {
@@ -195,7 +234,7 @@ func (sb *schemaBuilder) buildInterfaceStruct(typ reflect.Type) error {
 	}
 	iface.Fields = fields
 
-	iface.TypeResolver = interfaceTypeResolver(name, members)
+	iface.TypeResolver = memberTypeResolver("interface", name, members)
 
 	return nil
 }
@@ -267,41 +306,4 @@ func sameFieldSignature(a, b *graphql.Field) bool {
 		}
 	}
 	return true
-}
-
-// interfaceTypeResolver builds the function the executor uses to find which
-// concrete type a value of the interface carries.
-//
-// Members are matched by struct field index rather than by name, so an object
-// registered under a GraphQL name different from its Go type name still works.
-func interfaceTypeResolver(name string, members []interfaceMember) func(interface{}) (string, interface{}, error) {
-	return func(source interface{}) (string, interface{}, error) {
-		value := reflect.ValueOf(source)
-		for value.Kind() == reflect.Ptr {
-			if value.IsNil() {
-				return "", nil, nil
-			}
-			value = value.Elem()
-		}
-		if !value.IsValid() || value.Kind() != reflect.Struct {
-			return "", nil, nil
-		}
-
-		found := ""
-		var concrete interface{}
-		for _, member := range members {
-			inner := value.Field(member.fieldIndex)
-			if inner.IsNil() {
-				continue
-			}
-			if found != "" {
-				return "", nil, fmt.Errorf(
-					"interface %s should carry exactly one type, but received both %s and %s",
-					name, found, member.object.Name)
-			}
-			found = member.object.Name
-			concrete = inner.Interface()
-		}
-		return found, concrete, nil
-	}
 }

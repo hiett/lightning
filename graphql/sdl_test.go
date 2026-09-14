@@ -114,3 +114,116 @@ func TestPrintSchemaOmitsEmptyMutation(t *testing.T) {
 	_, err = graphql.ASTSchema(schema.MustBuild())
 	require.NoError(t, err)
 }
+
+type collidingPayload struct{ Totally string }
+
+// TestSchemaRejectsANameCollision checks that two different types sharing a
+// name is an error rather than a coin toss.
+//
+// A GraphQL schema has one namespace. Keeping the first type and dropping the
+// second lost every type reachable only through the loser, and which one won
+// was decided by Go map iteration — so the exported schema was wrong, silently,
+// and differently on each run. The schema builder catches the case it can see,
+// and the printer catches the rest.
+func TestSchemaRejectsANameCollision(t *testing.T) {
+	schema := schemabuilder.NewSchema()
+
+	inner := schema.Object("SDLInner", sdlInnerSource{})
+	inner.Key("key")
+
+	// A hand-written type whose name collides with the generated edge type.
+	schema.Object("SDLInnerEdge", collidingPayload{})
+
+	query := schema.Query()
+	query.FieldFunc("inners", func() []*sdlInnerSource { return nil }, schemabuilder.Paginated)
+	query.FieldFunc("impostor", func() *collidingPayload { return nil })
+
+	_, err := schema.Build()
+	require.Error(t, err, "a generated type name colliding with a registered one must be refused")
+	require.Contains(t, err.Error(), "SDLInnerEdge")
+}
+
+// TestPrintSchemaRejectsANameCollision covers the printer's own guard, for a
+// schema assembled by hand rather than through the builder.
+func TestPrintSchemaRejectsANameCollision(t *testing.T) {
+	shared := &graphql.Scalar{Type: "String"}
+	stringField := func() *graphql.Field {
+		return &graphql.Field{Type: &graphql.NonNull{Type: shared}}
+	}
+
+	// Two different objects, both called Thing.
+	first := &graphql.Object{Name: "Thing", Fields: map[string]*graphql.Field{"a": stringField()}}
+	second := &graphql.Object{Name: "Thing", Fields: map[string]*graphql.Field{"b": stringField()}}
+
+	built := &graphql.Schema{
+		Query: &graphql.Object{
+			Name: "Query",
+			Fields: map[string]*graphql.Field{
+				"first":  {Type: first},
+				"second": {Type: second},
+			},
+		},
+	}
+
+	// Whichever type collect happens to reach first, the answer must be the
+	// same error every time.
+	for range 8 {
+		_, err := graphql.PrintSchema(built)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "both named Thing")
+	}
+}
+
+type sdlInnerSource struct {
+	Key  string
+	Name string
+}
+
+// TestPrintSchemaNamesAnonymousInputsDeterministically checks that an input
+// object the schema left unnamed gets the same generated name every time, and
+// that printing does not modify the schema it is printing.
+//
+// The name used to come from a counter on the printer written straight into the
+// InputObject, so printing the same schema twice produced two different names,
+// two concurrent prints were a data race, and the name depended on map
+// iteration order.
+//
+// schemabuilder refuses an anonymous nested argument struct outright, so this
+// is only reachable for a schema assembled by hand.
+func TestPrintSchemaNamesAnonymousInputsDeterministically(t *testing.T) {
+	build := func() *graphql.Schema {
+		str := &graphql.NonNull{Type: &graphql.Scalar{Type: "String"}}
+		unnamed := &graphql.InputObject{
+			InputFields: map[string]graphql.Type{"term": str, "scope": str},
+		}
+		return &graphql.Schema{
+			Query: &graphql.Object{
+				Name: "Query",
+				Fields: map[string]*graphql.Field{
+					"search": {
+						Type: str,
+						Args: map[string]graphql.Type{"filter": unnamed},
+					},
+				},
+			},
+		}
+	}
+
+	built := build()
+
+	first, err := graphql.PrintSchema(built)
+	require.NoError(t, err)
+
+	// The same schema printed again, which used to bump a counter stored on the
+	// schema itself and so produce a different name.
+	second, err := graphql.PrintSchema(built)
+	require.NoError(t, err)
+	require.Equal(t, first, second, "printing twice must give the same document")
+
+	// And a fresh build of the same schema, which is what a CI run does.
+	third, err := graphql.PrintSchema(build())
+	require.NoError(t, err)
+	require.Equal(t, first, third, "the name must not depend on process state")
+
+	require.Contains(t, first, "input AnonymousInput_")
+}

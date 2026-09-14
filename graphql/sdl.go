@@ -1,6 +1,7 @@
 package graphql
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"strings"
@@ -38,7 +39,7 @@ func isReservedName(name string) bool {
 // emitted in sorted order, so the result can be committed to a repository and
 // diffed.
 func PrintSchema(schema *Schema) (string, error) {
-	p := &sdlPrinter{types: map[string]Type{}}
+	p := &sdlPrinter{types: map[string]Type{}, anonymousNames: map[*InputObject]string{}}
 
 	if err := p.collect(schema.Query); err != nil {
 		return "", err
@@ -76,9 +77,66 @@ type sdlPrinter struct {
 	// types holds every named type reachable from the schema roots, keyed by
 	// its GraphQL name.
 	types map[string]Type
-	// anonymous counts unnamed input objects, so each can be given a stable
-	// synthetic name.
-	anonymous int
+	// anonymousNames holds the synthetic name assigned to each unnamed input
+	// object, keyed by the object itself.
+	//
+	// The name is kept here rather than written onto the InputObject because a
+	// printer must not modify the schema it is printing: doing so made
+	// PrintSchema's output depend on how many times it had been called, and
+	// two concurrent calls a data race.
+	anonymousNames map[*InputObject]string
+}
+
+// record registers a named type, reporting a conflict if a different type
+// already holds that name.
+//
+// A GraphQL schema has one namespace, and two types cannot share a name. Simply
+// keeping the first and dropping the second loses every type reachable only
+// through the loser, and which one wins is decided by Go map iteration order —
+// so the exported schema would be wrong, silently, and differently on each run.
+func (p *sdlPrinter) record(name string, typ Type) (bool, error) {
+	existing, seen := p.types[name]
+	if !seen {
+		p.types[name] = typ
+		return true, nil
+	}
+	if existing == typ || sameLeafType(existing, typ) {
+		return false, nil
+	}
+	return false, fmt.Errorf("two different types are both named %s (%T and %T); a GraphQL schema has one namespace for type names", name, existing, typ)
+}
+
+// sameLeafType reports whether two distinct values describe the same leaf type.
+//
+// Scalars and enums are built fresh wherever they are used — every String field
+// has its own *Scalar — so for them the name is the type, and pointer identity
+// says nothing. Composite types are not like that: two *Object values sharing a
+// name really are a conflict.
+func sameLeafType(a, b Type) bool {
+	switch a := a.(type) {
+	case *Scalar:
+		b, ok := b.(*Scalar)
+		return ok && a.Type == b.Type
+
+	case *Enum:
+		b, ok := b.(*Enum)
+		if !ok || a.Type != b.Type || len(a.Values) != len(b.Values) {
+			return false
+		}
+		seen := make(map[string]bool, len(a.Values))
+		for _, value := range a.Values {
+			seen[value] = true
+		}
+		for _, value := range b.Values {
+			if !seen[value] {
+				return false
+			}
+		}
+		return true
+
+	default:
+		return false
+	}
 }
 
 // typeName returns the GraphQL name of a named type, assigning one to an
@@ -96,14 +154,41 @@ func (p *sdlPrinter) typeName(typ Type) (string, error) {
 	case *Interface:
 		return typ.Name, nil
 	case *InputObject:
-		if typ.Name == "" {
-			p.anonymous++
-			typ.Name = fmt.Sprintf("AnonymousInput%d", p.anonymous)
+		if typ.Name != "" {
+			return typ.Name, nil
 		}
-		return typ.Name, nil
+		return p.anonymousName(typ), nil
 	default:
 		return "", fmt.Errorf("type %T has no name", typ)
 	}
+}
+
+// anonymousName names an input object the schema builder left unnamed, which
+// happens when a nested argument is an anonymous Go struct.
+//
+// The name is derived from the object's own field names, so it is the same on
+// every run and in every process — an exported schema has to be stable enough
+// to commit and diff — and two anonymous inputs of the same shape, which are
+// the same type, get the same name.
+func (p *sdlPrinter) anonymousName(typ *InputObject) string {
+	if name, ok := p.anonymousNames[typ]; ok {
+		return name
+	}
+
+	fields := make([]string, 0, len(typ.InputFields))
+	for name := range typ.InputFields {
+		fields = append(fields, name)
+	}
+	sort.Strings(fields)
+
+	sum := sha256.Sum256([]byte(strings.Join(fields, ",")))
+	name := fmt.Sprintf("AnonymousInput_%x", sum[:4])
+
+	if p.anonymousNames == nil {
+		p.anonymousNames = make(map[*InputObject]string)
+	}
+	p.anonymousNames[typ] = name
+	return name
 }
 
 // collect walks the schema recording every named type it can reach.
@@ -123,17 +208,22 @@ func (p *sdlPrinter) collect(typ Type) error {
 		if err != nil {
 			return err
 		}
-		p.types[name] = typ
+		if _, err := p.record(name, typ); err != nil {
+			return err
+		}
 		return nil
 
 	case *Object:
 		if isReservedName(typ.Name) {
 			return nil
 		}
-		if _, seen := p.types[typ.Name]; seen {
+		fresh, err := p.record(typ.Name, typ)
+		if err != nil {
+			return err
+		}
+		if !fresh {
 			return nil
 		}
-		p.types[typ.Name] = typ
 
 		for name, field := range typ.Fields {
 			if isReservedName(name) {
@@ -156,10 +246,13 @@ func (p *sdlPrinter) collect(typ Type) error {
 		return nil
 
 	case *Interface:
-		if _, seen := p.types[typ.Name]; seen {
+		fresh, err := p.record(typ.Name, typ)
+		if err != nil {
+			return err
+		}
+		if !fresh {
 			return nil
 		}
-		p.types[typ.Name] = typ
 
 		for name, field := range typ.Fields {
 			if isReservedName(name) {
@@ -182,10 +275,13 @@ func (p *sdlPrinter) collect(typ Type) error {
 		return nil
 
 	case *Union:
-		if _, seen := p.types[typ.Name]; seen {
+		fresh, err := p.record(typ.Name, typ)
+		if err != nil {
+			return err
+		}
+		if !fresh {
 			return nil
 		}
-		p.types[typ.Name] = typ
 		for _, member := range typ.Types {
 			if err := p.collect(member); err != nil {
 				return err
@@ -198,10 +294,13 @@ func (p *sdlPrinter) collect(typ Type) error {
 		if err != nil {
 			return err
 		}
-		if _, seen := p.types[name]; seen {
+		fresh, err := p.record(name, typ)
+		if err != nil {
+			return err
+		}
+		if !fresh {
 			return nil
 		}
-		p.types[name] = typ
 		for _, field := range typ.InputFields {
 			if err := p.collect(field); err != nil {
 				return err

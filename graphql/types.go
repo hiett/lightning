@@ -174,6 +174,11 @@ type Union struct {
 	Name        string
 	Description string
 	Types       map[string]*Object
+
+	// TypeResolver inspects a value flowing through a field of this union type
+	// and reports which of Types it carries, along with the value to resolve
+	// for that type. An empty name means the value is absent.
+	TypeResolver func(value interface{}) (name string, concrete interface{}, err error)
 }
 
 func (*Union) isType() {}

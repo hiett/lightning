@@ -216,6 +216,7 @@ func (sb *schemaBuilder) buildUnionStruct(typ reflect.Type) error {
 	sb.types[typ] = union
 	sb.typeNames[name] = typ
 
+	members := make([]interfaceMember, 0, typ.NumField())
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		if field.PkgPath != "" || (field.Anonymous && field.Type == unionType) {
@@ -242,6 +243,7 @@ func (sb *schemaBuilder) buildUnionStruct(typ reflect.Type) error {
 		}
 
 		union.Types[obj.Name] = obj
+		members = append(members, interfaceMember{object: obj, fieldIndex: i})
 
 		// Record the membership on the object too, so that a fragment naming
 		// the union can be matched against a value of this type.
@@ -250,6 +252,12 @@ func (sb *schemaBuilder) buildUnionStruct(typ reflect.Type) error {
 		}
 		obj.Unions[name] = union
 	}
+
+	if len(members) == 0 {
+		return fmt.Errorf("bad type %s: a union must have at least one member type", name)
+	}
+
+	union.TypeResolver = memberTypeResolver("union", name, members)
 	return nil
 }
 

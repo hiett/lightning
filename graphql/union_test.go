@@ -213,7 +213,7 @@ func TestBadUnionNonOneHot(t *testing.T) {
 				t.Error("expected err, received nil")
 			}
 
-			if !strings.Contains(err.Error(), "union type field should only return one value") {
+			if !strings.Contains(err.Error(), "should carry exactly one type") {
 				t.Errorf("expected err, received %s", err.Error())
 			}
 		})
