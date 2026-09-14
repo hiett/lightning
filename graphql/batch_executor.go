@@ -423,20 +423,17 @@ func resolveUnionBatch(ctx context.Context, sources []interface{}, typ *Union, s
 		}
 	}
 
+	// The whole selection set goes to the concrete type, exactly as it does for
+	// an interface: resolveObjectBatch flattens it against that type, which
+	// drops the fragments whose type condition does not match and picks up
+	// __typename and fragments naming the union itself along the way.
 	var workUnits []*WorkUnit
 	for srcType, sources := range sourcesByType {
-		gqlType := typ.Types[srcType]
-		for _, fragment := range selectionSet.Fragments {
-			if !FragmentApplies(fragment.On, gqlType) {
-				continue
-			}
-			units, err := resolveObjectBatch(ctx, sources, gqlType, fragment.SelectionSet, destinationsByType[srcType])
-			if err != nil {
-				return nil, err
-			}
-			workUnits = append(workUnits, units...)
+		units, err := resolveObjectBatch(ctx, sources, typ.Types[srcType], selectionSet, destinationsByType[srcType])
+		if err != nil {
+			return nil, err
 		}
-
+		workUnits = append(workUnits, units...)
 	}
 	return workUnits, nil
 }

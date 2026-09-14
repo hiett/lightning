@@ -165,13 +165,11 @@ func PrepareQuery(ctx context.Context, typ Type, selectionSet *SelectionSet) err
 		}
 		for _, selection := range selectionSet.Selections {
 			if selection.Name == "__typename" {
+				// A union has no fields of its own; __typename is answered by
+				// the concrete type, which the executor reaches by flattening
+				// this selection set against it.
 				if err := checkTypenameSelection(selection); err != nil {
 					return err
-				}
-				// A union has no fields of its own, so __typename is pushed
-				// down into each fragment, where a concrete type can answer it.
-				for _, fragment := range selectionSet.Fragments {
-					fragment.SelectionSet.Selections = append(fragment.SelectionSet.Selections, selection)
 				}
 				continue
 			}
@@ -292,6 +290,14 @@ func PrepareQuery(ctx context.Context, typ Type, selectionSet *SelectionSet) err
 			}
 		}
 		for _, fragment := range selectionSet.Fragments {
+			// A fragment whose type condition cannot match this object is not
+			// prepared against it: the executor will drop it when it flattens
+			// the selection set, and preparing it here would report its fields
+			// as unknown. Schema validation rejects a fragment that can never
+			// match anywhere, which is the right place for that error.
+			if !FragmentApplies(fragment.On, typ) {
+				continue
+			}
 			if err := PrepareQuery(ctx, typ, fragment.SelectionSet); err != nil {
 				return err
 			}

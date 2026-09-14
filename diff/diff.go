@@ -169,7 +169,12 @@ func diffMap(old map[string]interface{}, newAny interface{}) interface{} {
 				d[k] = innerD
 			}
 		} else {
-			d[k] = newV
+			// A field that did not exist before is a replacement like any
+			// other, and has to be marked as one. Writing the value raw makes
+			// it indistinguishable from a diff node: a new field holding [] is
+			// read as a deletion, one holding [v] is unwrapped to v, and one
+			// holding an object is recursed into as though it were a diff.
+			d[k] = markReplaced(newV)
 		}
 	}
 

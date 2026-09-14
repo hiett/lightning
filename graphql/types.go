@@ -65,6 +65,11 @@ type Object struct {
 	// Interfaces holds every interface this object declares it implements,
 	// keyed by interface name.
 	Interfaces map[string]*Interface
+
+	// Unions holds every union this object is a member of, keyed by union
+	// name. A fragment may name a union the enclosing object belongs to, so
+	// matching a type condition needs to know about them.
+	Unions map[string]*Union
 }
 
 func (o *Object) isType() {}
@@ -142,7 +147,8 @@ func (o *Object) Implements(name string) bool {
 // applies to a value of object type o.
 //
 // A fragment with no type condition applies to whatever encloses it; otherwise
-// the condition must name the object itself or an interface it implements.
+// the condition must name the object itself, an interface it implements, or a
+// union it belongs to.
 func FragmentApplies(on string, o *Object) bool {
 	if on == "" || o == nil {
 		return true
@@ -150,7 +156,11 @@ func FragmentApplies(on string, o *Object) bool {
 	if on == o.Name {
 		return true
 	}
-	return o.Implements(on)
+	if o.Implements(on) {
+		return true
+	}
+	_, member := o.Unions[on]
+	return member
 }
 
 func (i *Interface) isType() {}

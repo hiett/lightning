@@ -1,6 +1,7 @@
 package schemabuilder
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -216,4 +217,59 @@ func parseUint64Arg(value interface{}) (uint64, error) {
 	default:
 		return 0, fmt.Errorf("not a valid %s", ScalarInt64)
 	}
+}
+
+// parseBoundedInt reads an Int argument into a signed destination of the given
+// width.
+//
+// A GraphQL Int is 32-bit, and nothing narrower has a scalar of its own, so the
+// bound is the Go type's. Truncating a value that does not fit, or rounding a
+// fractional one, would corrupt an argument silently; both are errors instead.
+func parseBoundedInt(value interface{}, bits int) (int64, error) {
+	var parsed int64
+
+	switch value := value.(type) {
+	case float64:
+		parsed = int64(value)
+		if float64(parsed) != value {
+			return 0, fmt.Errorf("%v is not an integer", value)
+		}
+	case int64:
+		// A literal too wide for float64; see valueToJSON. It cannot fit here
+		// either, but the range check below says so properly.
+		parsed = value
+	default:
+		return 0, errors.New("not a number")
+	}
+
+	limit := int64(1) << (bits - 1)
+	if parsed < -limit || parsed > limit-1 {
+		return 0, fmt.Errorf("%d does not fit in a %d-bit signed integer", parsed, bits)
+	}
+	return parsed, nil
+}
+
+// parseBoundedUint is parseBoundedInt for unsigned destinations.
+func parseBoundedUint(value interface{}, bits int) (uint64, error) {
+	var parsed int64
+
+	switch value := value.(type) {
+	case float64:
+		parsed = int64(value)
+		if float64(parsed) != value {
+			return 0, fmt.Errorf("%v is not an integer", value)
+		}
+	case int64:
+		parsed = value
+	default:
+		return 0, errors.New("not a number")
+	}
+
+	if parsed < 0 {
+		return 0, fmt.Errorf("%d is negative", parsed)
+	}
+	if uint64(parsed) > (uint64(1)<<bits)-1 {
+		return 0, fmt.Errorf("%d does not fit in a %d-bit unsigned integer", parsed, bits)
+	}
+	return uint64(parsed), nil
 }

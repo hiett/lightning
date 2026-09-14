@@ -165,3 +165,51 @@ func TestIDArgument(t *testing.T) {
 	require.Equal(t, "xyz", run(`"xyz"`))
 	require.Equal(t, "4", run(`4`), "an integer ID is the same identifier as its string form")
 }
+
+// TestIntArgumentIsBounded checks that an Int argument that does not fit its Go
+// destination, or is not an integer at all, is rejected rather than silently
+// truncated or rounded.
+func TestIntArgumentIsBounded(t *testing.T) {
+	schema := schemabuilder.NewSchema()
+	schema.Query().FieldFunc("small", func(args struct{ V int32 }) int32 { return args.V })
+	schema.Query().FieldFunc("tiny", func(args struct{ V int8 }) int32 { return int32(args.V) })
+	schema.Query().FieldFunc("unsigned", func(args struct{ V uint8 }) int32 { return int32(args.V) })
+	built := schema.MustBuild()
+
+	run := func(t *testing.T, field, literal string) (interface{}, error) {
+		t.Helper()
+		q, err := graphql.Parse("{ "+field+"(v: "+literal+") }", nil)
+		if err != nil {
+			return nil, err
+		}
+		if err := graphql.PrepareQuery(t.Context(), built.Query, q.SelectionSet); err != nil {
+			return nil, err
+		}
+		e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
+		result, err := e.Execute(t.Context(), built.Query, nil, q)
+		if err != nil {
+			return nil, err
+		}
+		return internal.AsJSON(result).(map[string]interface{})[field], nil
+	}
+
+	got, err := run(t, "small", "2147483647")
+	require.NoError(t, err)
+	require.Equal(t, float64(2147483647), got, "the largest Int must survive")
+
+	_, err = run(t, "small", "2147483648")
+	require.Error(t, err, "a value past the 32-bit maximum must be rejected, not wrapped")
+
+	_, err = run(t, "small", "1.5")
+	require.Error(t, err, "a fractional value must be rejected, not truncated")
+
+	_, err = run(t, "tiny", "200")
+	require.Error(t, err, "200 does not fit in an int8")
+
+	_, err = run(t, "unsigned", "-1")
+	require.Error(t, err, "a negative value must not become a large unsigned one")
+
+	got, err = run(t, "unsigned", "255")
+	require.NoError(t, err)
+	require.Equal(t, float64(255), got)
+}

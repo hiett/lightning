@@ -242,6 +242,13 @@ func (sb *schemaBuilder) buildUnionStruct(typ reflect.Type) error {
 		}
 
 		union.Types[obj.Name] = obj
+
+		// Record the membership on the object too, so that a fragment naming
+		// the union can be matched against a value of this type.
+		if obj.Unions == nil {
+			obj.Unions = make(map[string]*graphql.Union)
+		}
+		obj.Unions[name] = union
 	}
 	return nil
 }

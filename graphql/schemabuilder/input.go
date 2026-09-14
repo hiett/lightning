@@ -406,31 +406,31 @@ var scalarArgParsers = map[reflect.Type]*argParser{
 	},
 	reflect.TypeOf(int32(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseBoundedInt(value, 32)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(int32(asFloat)).Convert(dest.Type()))
+			dest.Set(reflect.ValueOf(int32(parsed)).Convert(dest.Type()))
 			return nil
 		},
 	},
 	reflect.TypeOf(int16(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseBoundedInt(value, 16)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(int16(asFloat)).Convert(dest.Type()))
+			dest.Set(reflect.ValueOf(int16(parsed)).Convert(dest.Type()))
 			return nil
 		},
 	},
 	reflect.TypeOf(int8(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseBoundedInt(value, 8)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(int8(asFloat)).Convert(dest.Type()))
+			dest.Set(reflect.ValueOf(int8(parsed)).Convert(dest.Type()))
 			return nil
 		},
 	},
@@ -469,21 +469,21 @@ var scalarArgParsers = map[reflect.Type]*argParser{
 	},
 	reflect.TypeOf(uint16(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseBoundedUint(value, 16)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(uint16(asFloat)).Convert(dest.Type()))
+			dest.Set(reflect.ValueOf(uint16(parsed)).Convert(dest.Type()))
 			return nil
 		},
 	},
 	reflect.TypeOf(uint8(0)): {
 		FromJSON: func(value interface{}, dest reflect.Value) error {
-			asFloat, ok := value.(float64)
-			if !ok {
-				return errors.New("not a number")
+			parsed, err := parseBoundedUint(value, 8)
+			if err != nil {
+				return err
 			}
-			dest.Set(reflect.ValueOf(uint8(asFloat)).Convert(dest.Type()))
+			dest.Set(reflect.ValueOf(uint8(parsed)).Convert(dest.Type()))
 			return nil
 		},
 	},
