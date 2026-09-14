@@ -286,3 +286,53 @@ goroutine and the rerunner's goroutine with no synchronisation, and `Expect.Trig
 The races are in the tests, not in `reactive` itself. The shared state is now mutex-guarded,
 `Expect.Trigger` is idempotent via `sync.Once`, and `TestMinRerunInterval` stops its runner. Verified
 with `go test -race -count=5 ./reactive/`.
+
+## D16. Node registration is per-type, not a marker struct
+
+Phase 6. Interfaces (D13) are declared with a marker struct listing their members, but `Node` is
+different: which types are nodes is a property each type declares about itself, and a marker struct
+listing them all would have to be edited every time a type joins.
+
+```go
+author := schema.Object("Author", Author{})
+author.Node(
+    func(a *Author) string { return a.Key },                          // type-local identifier
+    func(ctx context.Context, id string) (*Author, error) { ... },    // fetch by that identifier
+)
+```
+
+`Schema.Build` then, when at least one type has registered:
+
+1. defines each node type's **`id` field as its global identifier**, replacing whatever `id` the Go
+   struct would have exposed — that is what Relay's store keys off, and `schemabuilder` already lets
+   a registered field override a struct field. The field is built with `reflect.MakeFunc` because
+   its source parameter type is only known at run time, then goes through the ordinary `FieldFunc`
+   path;
+2. **builds every node type up front**, before the query root. A type reachable only through
+   `node(id:)` would otherwise never be built and would be missing from the interface's possible
+   types;
+3. assembles the `Node` interface from those objects and marks each as implementing it;
+4. adds `node(id: ID!): Node` and `nodes(ids: [ID!]!): [Node]!` to the query root, failing if the
+   root already defines either name.
+
+A field returns a value *as* a Node by wrapping it: `schemabuilder.NodeOf(typeName, value)` returns
+a `*NodeRef`, and a field declared to return `*NodeRef` has the GraphQL type `Node`.
+
+**Why `node`/`nodes` are built as `graphql.Field` values directly** rather than through `FieldFunc`:
+their result types are interfaces, and `nodes` needs `[Node]!` — nullable entries, so an unknown
+identifier yields null instead of failing the whole request. `schemabuilder`'s reflection path
+passes `forceListEntryNonNull: true` everywhere and can only produce `[Node!]!`.
+
+Resolution semantics: a malformed identifier or an unregistered type name is a **client error** with
+a usable message; an object the fetcher does not find is **null**; an error from the fetcher
+**propagates**.
+
+## D17. Global identifiers are base64 of `TypeName:localID`, and swappable
+
+The codec is the `GlobalIDCodec` interface, with `Base64GlobalIDCodec` as the default, replaceable
+per schema with `(*Schema).SetGlobalIDCodec`. Decoding splits on the *first* colon, so a type-local
+identifier may itself contain colons.
+
+The default is obfuscation, not secrecy — anyone can base64-decode it. A schema whose identifiers
+must not be guessable or forgeable should supply a codec that signs them; that is why the interface
+exists and why `Encode` and `Decode` both return errors.

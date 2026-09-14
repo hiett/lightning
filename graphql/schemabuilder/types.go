@@ -14,6 +14,10 @@ type Object struct {
 	Methods     Methods // Deprecated, use FieldFunc instead.
 	key         string
 	ServiceName string
+
+	// node is set when the type declares itself a Relay node; see
+	// (*Object).Node.
+	node *nodeRegistration
 }
 
 type paginationObject struct {

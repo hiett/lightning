@@ -17,7 +17,12 @@ type schemaBuilder struct {
 	objects      map[reflect.Type]*Object
 	interfaces   map[string]*InterfaceObject
 	enumMappings map[reflect.Type]*EnumMapping
-	typeCache    map[reflect.Type]cachedType // typeCache maps Go types to GraphQL datatypes
+
+	// nodeInterface is the Relay Node interface, present only when at least
+	// one type registered as a node.
+	nodeInterface  *graphql.Interface
+	nodeRootFields map[string]*graphql.Field
+	typeCache      map[reflect.Type]cachedType // typeCache maps Go types to GraphQL datatypes
 }
 
 // EnumMapping is a representation of an enum that includes both the mapping and
@@ -43,6 +48,14 @@ func (sb *schemaBuilder) getType(nodeType reflect.Type, forceListEntryNonNull bo
 	// to have eg. time.Time function as a scalar.
 	if typeName, values, ok := sb.getEnum(nodeType); ok {
 		return &graphql.NonNull{Type: &graphql.Enum{Type: typeName, Values: values, ReverseMap: sb.enumMappings[nodeType].ReverseMap}}, nil
+	}
+
+	// A *NodeRef is a value being returned through the Node interface.
+	if nodeType.Kind() == reflect.Ptr && nodeType.Elem() == nodeRefType {
+		if sb.nodeInterface == nil {
+			return nil, fmt.Errorf("a field returns *schemabuilder.NodeRef but no type has registered as a node")
+		}
+		return sb.nodeInterface, nil
 	}
 
 	if typeName, ok := getScalar(nodeType); ok {

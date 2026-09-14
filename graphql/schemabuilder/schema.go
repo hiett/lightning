@@ -15,17 +15,19 @@ const federationName = "Federation"
 // can be registered against the "Mutation" and "Query" objects in order to
 // build out a full GraphQL schema.
 type Schema struct {
-	Name       string
-	objects    map[string]*Object
-	interfaces map[string]*InterfaceObject
-	enumTypes  map[reflect.Type]*EnumMapping
+	Name          string
+	objects       map[string]*Object
+	interfaces    map[string]*InterfaceObject
+	enumTypes     map[reflect.Type]*EnumMapping
+	globalIDCodec GlobalIDCodec
 }
 
 // NewSchema creates a new schema.
 func NewSchema() *Schema {
 	schema := &Schema{
-		objects:    make(map[string]*Object),
-		interfaces: make(map[string]*InterfaceObject),
+		objects:       make(map[string]*Object),
+		interfaces:    make(map[string]*InterfaceObject),
+		globalIDCodec: Base64GlobalIDCodec{},
 	}
 
 	// Default registrations.
@@ -40,9 +42,10 @@ func NewSchema() *Schema {
 // NewSchema creates a new schema with a schema name
 func NewSchemaWithName(name string) *Schema {
 	schema := &Schema{
-		Name:       strings.ToLower(name),
-		objects:    make(map[string]*Object),
-		interfaces: make(map[string]*InterfaceObject),
+		Name:          strings.ToLower(name),
+		objects:       make(map[string]*Object),
+		interfaces:    make(map[string]*InterfaceObject),
+		globalIDCodec: Base64GlobalIDCodec{},
 	}
 
 	// Default registrations.
@@ -369,6 +372,37 @@ func (s *Schema) Build() (*graphql.Schema, error) {
 		sb.objects[typ] = object
 	}
 
+	nodeTypes, err := s.buildNodeTypes()
+	if err != nil {
+		return nil, err
+	}
+	if len(nodeTypes) > 0 {
+		s.registerNodeIDFields(nodeTypes)
+
+		// Build every node type up front. A type reachable only through the
+		// node field would otherwise never be built, and the Node interface
+		// would be missing one of its possible types.
+		nodeObjects := make(map[string]*graphql.Object, len(nodeTypes))
+		for name, node := range nodeTypes {
+			built, err := sb.getType(reflect.PointerTo(node.goType), true)
+			if err != nil {
+				return nil, err
+			}
+			object, ok := built.(*graphql.Object)
+			if !ok {
+				return nil, fmt.Errorf("node type %s must build to an object, got %s", name, built.String())
+			}
+			nodeObjects[name] = object
+		}
+
+		iface, err := buildNodeInterface(nodeObjects)
+		if err != nil {
+			return nil, err
+		}
+		sb.nodeInterface = iface
+		sb.nodeRootFields = nodeRootFields(iface, s.globalIDCodec, nodeTypes)
+	}
+
 	queryTyp, err := sb.getType(reflect.TypeOf(&query{}), true)
 	if err != nil {
 		return nil, err
@@ -377,6 +411,20 @@ func (s *Schema) Build() (*graphql.Schema, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if sb.nodeRootFields != nil {
+		queryObject, ok := queryTyp.(*graphql.Object)
+		if !ok {
+			return nil, fmt.Errorf("expected the query root to be an object, got %s", queryTyp.String())
+		}
+		for name, field := range sb.nodeRootFields {
+			if _, taken := queryObject.Fields[name]; taken {
+				return nil, fmt.Errorf("the query root already defines a %q field, which the Node interface needs", name)
+			}
+			queryObject.Fields[name] = field
+		}
+	}
+
 	return &graphql.Schema{
 		Query:    queryTyp,
 		Mutation: mutationTyp,
