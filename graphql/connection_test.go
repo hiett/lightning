@@ -175,7 +175,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -195,7 +195,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -216,7 +216,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -237,7 +237,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -257,7 +257,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -277,7 +277,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -297,7 +297,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -317,7 +317,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -339,7 +339,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -356,7 +356,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -373,7 +373,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -390,7 +390,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -412,7 +412,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -429,7 +429,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -446,7 +446,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -463,7 +463,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -480,7 +480,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -497,7 +497,7 @@ func TestConnection(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -788,7 +788,7 @@ func TestEmbeddedArgs(t *testing.T) {
 					}
 					pageInfo {
 						hasNextPage
-						hasPrevPage
+						hasPreviousPage
 						startCursor
 						endCursor
 					}
@@ -845,10 +845,10 @@ func TestEmbeddedArgs(t *testing.T) {
 					},
 				},
 				"pageInfo": map[string]interface{}{
-					"hasNextPage": true,
-					"hasPrevPage": false,
-					"startCursor": "MQ==",
-					"endCursor":   "NQ==",
+					"hasNextPage":     true,
+					"hasPreviousPage": false,
+					"startCursor":     "MQ==",
+					"endCursor":       "NQ==",
 				},
 			},
 		},
@@ -931,7 +931,7 @@ func TestEmbeddedArgsWithFilter(t *testing.T) {
 					}
 					pageInfo {
 						hasNextPage
-						hasPrevPage
+						hasPreviousPage
 						startCursor
 						endCursor
 					}
@@ -974,10 +974,10 @@ func TestEmbeddedArgsWithFilter(t *testing.T) {
 					},
 				},
 				"pageInfo": map[string]interface{}{
-					"hasNextPage": true,
-					"hasPrevPage": false,
-					"startCursor": "MQ==",
-					"endCursor":   "NQ==",
+					"hasNextPage":     true,
+					"hasPreviousPage": false,
+					"startCursor":     "MQ==",
+					"endCursor":       "NQ==",
 				},
 			},
 		},
@@ -1026,7 +1026,7 @@ func TestEmbeddedArgsWithPageInfo(t *testing.T) {
 					}
 					pageInfo {
 						hasNextPage
-						hasPrevPage
+						hasPreviousPage
 						startCursor
 						endCursor
 					}
@@ -1069,10 +1069,10 @@ func TestEmbeddedArgsWithPageInfo(t *testing.T) {
 					},
 				},
 				"pageInfo": map[string]interface{}{
-					"hasNextPage": true,
-					"hasPrevPage": false,
-					"startCursor": "MQ==",
-					"endCursor":   "Mw==",
+					"hasNextPage":     true,
+					"hasPreviousPage": false,
+					"startCursor":     "MQ==",
+					"endCursor":       "Mw==",
 				},
 			},
 		},
@@ -1123,7 +1123,7 @@ func TestEmbeddedArgsWithFilterAndPageInfo(t *testing.T) {
 					}
 					pageInfo {
 						hasNextPage
-						hasPrevPage
+						hasPreviousPage
 						startCursor
 						endCursor
 					}
@@ -1166,10 +1166,10 @@ func TestEmbeddedArgsWithFilterAndPageInfo(t *testing.T) {
 					},
 				},
 				"pageInfo": map[string]interface{}{
-					"hasNextPage": true,
-					"hasPrevPage": false,
-					"startCursor": "MQ==",
-					"endCursor":   "NQ==",
+					"hasNextPage":     true,
+					"hasPreviousPage": false,
+					"startCursor":     "MQ==",
+					"endCursor":       "NQ==",
 				},
 			},
 		},
@@ -1989,7 +1989,7 @@ func TestConnectionManual(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -2010,7 +2010,7 @@ func TestConnectionManual(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -2032,7 +2032,7 @@ func TestConnectionManual(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -2053,7 +2053,7 @@ func TestConnectionManual(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -2074,7 +2074,7 @@ func TestConnectionManual(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -2096,7 +2096,7 @@ func TestConnectionManual(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 					pages
@@ -2142,7 +2142,7 @@ func TestConnectionCursor(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -2162,7 +2162,7 @@ func TestConnectionCursor(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -2182,7 +2182,7 @@ func TestConnectionCursor(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -2202,7 +2202,7 @@ func TestConnectionCursor(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -2222,7 +2222,7 @@ func TestConnectionCursor(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}
@@ -2242,7 +2242,7 @@ func TestConnectionCursor(t *testing.T) {
 				}
 				pageInfo {
 					hasNextPage
-					hasPrevPage
+					hasPreviousPage
 					startCursor
 					endCursor
 				}

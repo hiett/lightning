@@ -17,7 +17,7 @@
             "pageInfo": {
               "endCursor": "MQ==",
               "hasNextPage": true,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "startCursor": "MQ=="
             },
             "totalCount": "5"
@@ -51,7 +51,7 @@
             "pageInfo": {
               "endCursor": "NQ==",
               "hasNextPage": false,
-              "hasPrevPage": true,
+              "hasPreviousPage": true,
               "pages": [
                 "",
                 "Mg==",
@@ -111,7 +111,7 @@
             "pageInfo": {
               "endCursor": "NQ==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],
@@ -141,7 +141,7 @@
             "pageInfo": {
               "endCursor": "MQ==",
               "hasNextPage": true,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "startCursor": "MQ=="
             },
             "totalCount": "5"
@@ -168,7 +168,7 @@
             "pageInfo": {
               "endCursor": "MQ==",
               "hasNextPage": true,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "startCursor": "MQ=="
             },
             "totalCount": "5"
@@ -220,7 +220,7 @@
             "pageInfo": {
               "endCursor": "NA==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],
@@ -258,7 +258,7 @@
             "pageInfo": {
               "endCursor": "NQ==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],
@@ -296,7 +296,7 @@
             "pageInfo": {
               "endCursor": "Ng==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],
@@ -307,11 +307,11 @@
           "filterByCanAndNonExistentFilterFunc": {
             "edges": [],
             "pageInfo": {
-              "endCursor": "",
+              "endCursor": null,
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [],
-              "startCursor": ""
+              "startCursor": null
             },
             "totalCount": "0"
           }
@@ -370,7 +370,7 @@
             "pageInfo": {
               "endCursor": "Mw==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],
@@ -424,7 +424,7 @@
             "pageInfo": {
               "endCursor": "MQ==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],
@@ -478,7 +478,7 @@
             "pageInfo": {
               "endCursor": "Mw==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],
@@ -532,7 +532,7 @@
             "pageInfo": {
               "endCursor": "MQ==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],
@@ -586,7 +586,7 @@
             "pageInfo": {
               "endCursor": "Mw==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],
@@ -640,7 +640,7 @@
             "pageInfo": {
               "endCursor": "MQ==",
               "hasNextPage": false,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "pages": [
                 ""
               ],

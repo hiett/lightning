@@ -336,3 +336,41 @@ identifier may itself contain colons.
 The default is obfuscation, not secrecy — anyone can base64-decode it. A schema whose identifiers
 must not be guessable or forgeable should supply a codec that signs them; that is why the interface
 exists and why `Encode` and `Decode` both return errors.
+
+## D18. Connection conformance: three bugs and four deliberate changes
+
+Phase 7. `PLAN.md` expected only a rename here. Printing a generated connection as SDL turned up
+three bugs first.
+
+**Bugs fixed:**
+
+1. **`node: Item!!`** — `constructEdgeType` wrapped the node type in `NonNull` unconditionally, but
+   `getType` had already wrapped a non-pointer node type. The doubled wrapper is not legal SDL and
+   `gqlparser.LoadSchema` rejects it, so *no* schema with a connection over a value type could have
+   been exported at all. `node` is now wrapped only if it is not already non-null.
+2. **`NonNullItemConnection`** — generated type names came from `getTypeName`, which prefixed
+   non-pointer Go types with the literal string `NonNull` to keep `[]Item` and `[]*Item` apart.
+   That name reaches clients. Names now come from the node's **GraphQL** type name, so both spell
+   `ItemConnection` / `ItemEdge`.
+3. `hasPrevPage` → **`hasPreviousPage`**, the name in the specification (this one the plan predicted).
+
+**Deliberate changes:**
+
+4. **`startCursor` and `endCursor` are nullable** (`*string` in Go). An empty page has no cursors,
+   and the specification types both as nullable; thunder returned `String!` and an empty string.
+5. **`first` and `last` are `Int`, not `Int64`.** `ConnectionArgs.First/Last` and
+   `PaginationArgs.First/Last` changed from `*int64` to `*int32`. relay-compiler declares pagination
+   count variables as `Int` — `@argumentDefinitions(count: {type: "Int"})` is what
+   `usePaginationFragment` generates — and would reject an `Int64` argument. A page size does not
+   need 64 bits.
+6. **`edges: [ItemEdge!]!` and `node: Item!` are kept stricter than the specification**, which allows
+   `[ItemEdge]` with nullable entries. relay-compiler accepts the stricter form, and a connection
+   that can hand back null edges is not useful. `PLAN.md` asked to tighten where thunder was looser;
+   here it was already stricter, so it stays.
+7. **`pageInfo.pages` and `totalCount` are kept as documented extensions.** Neither is in the
+   specification; Relay ignores fields it does not know about. `PageInfo`'s doc comment now says so.
+   `totalCount` stays `Int64!` because `Connection.TotalCount` is a Go `int64`.
+
+Node types inside connections implement `Node` automatically when they register with
+`(*Object).Node` — the connection reuses the same built `*graphql.Object`, so no extra work was
+needed for `PLAN.md` item 4.

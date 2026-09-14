@@ -27,16 +27,16 @@ var typeOfString = reflect.TypeOf("")
 var typeofFilterMap = reflect.TypeOf(map[batch.Index]string{})
 
 // paginateManually applies the pagination arguments to the edges in memory and sets hasNextPage +
-// hasPrevPage. The behavior is expected to conform to the Relay Cursor spec:
+// hasPreviousPage. The behavior is expected to conform to the Relay Cursor spec:
 // https://facebook.github.io/relay/graphql/connections.htm#EdgesToReturn()
 func (c *Connection) paginateManually(args PaginationArgs) error {
 	var elemsAfter, elemsBefore bool
 	c.Edges, elemsAfter, elemsBefore = applyCursorsToAllEdges(c.Edges, args.Before, args.After)
 
 	c.PageInfo.HasNextPage = args.Before != nil && elemsAfter
-	c.PageInfo.HasPrevPage = args.After != nil && elemsBefore
+	c.PageInfo.HasPreviousPage = args.After != nil && elemsBefore
 
-	if (safeInt64Ptr(args.First) < 0) || safeInt64Ptr(args.Last) < 0 {
+	if (safeInt32Ptr(args.First) < 0) || safeInt32Ptr(args.Last) < 0 {
 		return graphql.NewClientError("first/last cannot be a negative integer")
 	}
 
@@ -51,7 +51,7 @@ func (c *Connection) paginateManually(args PaginationArgs) error {
 
 	if args.Last != nil && len(c.Edges) > int(*args.Last) {
 		c.Edges = c.Edges[len(c.Edges)-int(*args.Last):]
-		c.PageInfo.HasPrevPage = true
+		c.PageInfo.HasPreviousPage = true
 	}
 	return nil
 }
@@ -61,29 +61,38 @@ func (c *Connection) setCursors() {
 	if len(c.Edges) == 0 {
 		return
 	}
-	c.PageInfo.EndCursor = c.Edges[len(c.Edges)-1].Cursor
-	c.PageInfo.StartCursor = c.Edges[0].Cursor
+	c.PageInfo.EndCursor = &c.Edges[len(c.Edges)-1].Cursor
+	c.PageInfo.StartCursor = &c.Edges[0].Cursor
 }
 
 // externallySetPageInfo takes in a user-defined PaginationInfo struct,
-// using its count, HasNextPage and HasPrevPage information as the source
+// using its count, HasNextPage and HasPreviousPage information as the source
 // of truth.
 func (c *Connection) externallySetPageInfo(info PaginationInfo) (err error) {
 	c.PageInfo.HasNextPage = info.HasNextPage
-	c.PageInfo.HasPrevPage = info.HasPrevPage
+	c.PageInfo.HasPreviousPage = info.HasPrevPage
 	c.TotalCount, err = info.TotalCount()
 	c.PageInfo.Pages = info.Pages
 	return err
 }
 
-// PageInfo contains information for pagination on a connection type. The list of Pages is used for
-// page-number based pagination where the ith index corresponds to the start cursor of (i+1)st page.
+// PageInfo contains information for pagination on a connection type, as
+// specified by the Relay Cursor Connections specification.
+//
+// StartCursor and EndCursor are nil for an empty page, which is why they are
+// pointers: an empty connection has no cursors, and the specification types
+// them as nullable.
+//
+// Pages is an extension, not part of the specification. It supports
+// page-number based pagination, where the ith entry is the start cursor of the
+// (i+1)st page. Relay ignores fields it does not know about, so it is harmless
+// to a Relay client.
 type PageInfo struct {
-	HasNextPage bool
-	EndCursor   string
-	HasPrevPage bool
-	StartCursor string
-	Pages       []string
+	HasNextPage     bool
+	HasPreviousPage bool
+	StartCursor     *string
+	EndCursor       *string
+	Pages           []string
 }
 
 // Edge consists of a node paired with its b64 encoded cursor.
@@ -96,9 +105,13 @@ type Edge struct {
 // types. https://facebook.github.io/relay/graphql/connections.htm#sec-Arguments
 type ConnectionArgs struct {
 	// first: n
-	First *int64
+	//
+	// int32, so that the argument's GraphQL type is the specification's Int
+	// rather than the custom Int64 scalar. relay-compiler declares pagination
+	// count variables as Int and would reject anything else.
+	First *int32
 	// last: n
-	Last *int64
+	Last *int32
 	// after: cursor
 	After *string
 	// before: cursor
@@ -121,8 +134,8 @@ type ConnectionArgs struct {
 // PaginationArgs are used in externally set connections by embedding them in an args struct. They
 // are mapped onto ConnectionArgs, which follows the Relay spec for connection types.
 type PaginationArgs struct {
-	First  *int64
-	Last   *int64
+	First  *int32
+	Last   *int32
 	After  *string
 	Before *string
 
@@ -175,11 +188,37 @@ func (i PaginationInfo) TotalCount() (int64, error) {
 	return i.TotalCountFunc(), nil
 }
 
-func getTypeName(typ reflect.Type) string {
-	if typ.Kind() == reflect.Ptr {
-		return typ.Elem().Name()
+// connectionTypeName returns the GraphQL name of a connection's node type,
+// which is what the generated Connection and Edge types are named after.
+//
+// It is the node's *GraphQL* name rather than its Go name, so that []Item and
+// []*Item produce the same ItemConnection rather than an ItemConnection and a
+// NonNullItemConnection.
+func connectionTypeName(typ graphql.Type) (string, error) {
+	switch typ := typ.(type) {
+	case *graphql.NonNull:
+		return connectionTypeName(typ.Type)
+	case *graphql.Object:
+		return typ.Name, nil
+	case *graphql.Interface:
+		return typ.Name, nil
+	case *graphql.Union:
+		return typ.Name, nil
+	case *graphql.Scalar:
+		return typ.Type, nil
+	case *graphql.Enum:
+		return typ.Type, nil
+	default:
+		return "", fmt.Errorf("cannot build a connection over %s", typ.String())
 	}
-	return fmt.Sprintf("NonNull%s", typ.Name())
+}
+
+// nonNull wraps a type in NonNull unless it already is one.
+func nonNull(typ graphql.Type) graphql.Type {
+	if _, already := typ.(*graphql.NonNull); already {
+		return typ
+	}
+	return &graphql.NonNull{Type: typ}
 }
 
 type connectionContext struct {
@@ -234,6 +273,7 @@ func (sb *schemaBuilder) constructEdgeType(typ reflect.Type) (graphql.Type, erro
 	fieldMap := make(map[string]*graphql.Field)
 
 	nodeField := &graphql.Field{
+		Description: "The item at the end of the edge.",
 		Resolve: func(ctx context.Context, source, args interface{}, selectionSet *graphql.SelectionSet) (interface{}, error) {
 			if value, ok := source.(Edge); ok {
 				return value.Node, nil
@@ -242,7 +282,10 @@ func (sb *schemaBuilder) constructEdgeType(typ reflect.Type) (graphql.Type, erro
 			return nil, fmt.Errorf("error resolving node in edge")
 
 		},
-		Type:           &graphql.NonNull{Type: nodeType},
+		// A connection whose edges can be null is not useful, so node is always
+		// non-null. nonNull, rather than a bare wrap, because getType has
+		// already wrapped a non-pointer node type.
+		Type:           nonNull(nodeType),
 		ParseArguments: nilParseArguments,
 	}
 	fieldMap["node"] = nodeField
@@ -253,6 +296,7 @@ func (sb *schemaBuilder) constructEdgeType(typ reflect.Type) (graphql.Type, erro
 	}
 
 	cursorField := &graphql.Field{
+		Description: "A cursor for use in pagination.",
 		Resolve: func(ctx context.Context, source, args interface{}, selectionSet *graphql.SelectionSet) (interface{}, error) {
 			if value, ok := source.(Edge); ok {
 				return value.Cursor, nil
@@ -265,10 +309,15 @@ func (sb *schemaBuilder) constructEdgeType(typ reflect.Type) (graphql.Type, erro
 
 	fieldMap["cursor"] = cursorField
 
+	name, err := connectionTypeName(nodeType)
+	if err != nil {
+		return nil, err
+	}
+
 	return &graphql.NonNull{
 		Type: &graphql.Object{
-			Name:        fmt.Sprintf("%sEdge", getTypeName(typ)),
-			Description: "",
+			Name:        fmt.Sprintf("%sEdge", name),
+			Description: fmt.Sprintf("An edge in a %s connection.", name),
 			Fields:      fieldMap,
 		},
 	}, nil
@@ -313,17 +362,27 @@ func (c *connectionContext) constructConnectionType(sb *schemaBuilder, typ refle
 		return nil, err
 	}
 	fieldMap["pageInfo"] = pageInfoField
+
+	nodeType, err := sb.getType(typ, true)
+	if err != nil {
+		return nil, err
+	}
+	name, err := connectionTypeName(nodeType)
+	if err != nil {
+		return nil, err
+	}
+
 	retObject := &graphql.NonNull{
 		Type: &graphql.Object{
-			Name:        fmt.Sprintf("%sConnection", getTypeName(typ)),
-			Description: "",
+			Name:        fmt.Sprintf("%sConnection", name),
+			Description: fmt.Sprintf("A paginated list of %s, following the Relay Cursor Connections specification.", name),
 			Fields:      fieldMap,
 		},
 	}
 	return retObject, nil
 }
 
-func safeInt64Ptr(i *int64) int64 {
+func safeInt32Ptr(i *int32) int32 {
 	if i == nil {
 		return 0
 	}
@@ -341,7 +400,7 @@ func getCursorIndex(edges []Edge, cursor string) int {
 }
 
 // applyCursorsToAllEdges returns the slice of edges after applying the after and before arguments.
-// It also implements part of the hasNextPage and hasPrevPage algorithm by returning if there are
+// It also implements part of the hasNextPage and hasPreviousPage algorithm by returning if there are
 // elements after or before the arguments.
 func applyCursorsToAllEdges(edges []Edge, before *string, after *string) ([]Edge, bool, bool) {
 	edgeCount := len(edges)

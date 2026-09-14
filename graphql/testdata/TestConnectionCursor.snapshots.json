@@ -24,7 +24,7 @@
             "pageInfo": {
               "endCursor": "NQ==",
               "hasNextPage": false,
-              "hasPrevPage": true,
+              "hasPreviousPage": true,
               "startCursor": "NA=="
             },
             "totalCount": "5"
@@ -58,7 +58,7 @@
             "pageInfo": {
               "endCursor": "Mg==",
               "hasNextPage": true,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "startCursor": "MQ=="
             },
             "totalCount": "5"
@@ -92,7 +92,7 @@
             "pageInfo": {
               "endCursor": "Mg==",
               "hasNextPage": true,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "startCursor": "MQ=="
             },
             "totalCount": "5"
@@ -126,7 +126,7 @@
             "pageInfo": {
               "endCursor": "Mg==",
               "hasNextPage": true,
-              "hasPrevPage": false,
+              "hasPreviousPage": false,
               "startCursor": "MQ=="
             },
             "totalCount": "5"
@@ -160,7 +160,7 @@
             "pageInfo": {
               "endCursor": "NQ==",
               "hasNextPage": false,
-              "hasPrevPage": true,
+              "hasPreviousPage": true,
               "startCursor": "NA=="
             },
             "totalCount": "5"
@@ -194,7 +194,7 @@
             "pageInfo": {
               "endCursor": "NQ==",
               "hasNextPage": false,
-              "hasPrevPage": true,
+              "hasPreviousPage": true,
               "startCursor": "NA=="
             },
             "totalCount": "5"

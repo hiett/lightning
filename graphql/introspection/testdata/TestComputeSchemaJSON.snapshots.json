@@ -175,6 +175,16 @@
               ]
             },
             {
+              "description": "",
+              "enumValues": [],
+              "fields": [],
+              "inputFields": [],
+              "interfaces": [],
+              "kind": "SCALAR",
+              "name": "Int",
+              "possibleTypes": []
+            },
+            {
               "description": "A 64-bit signed integer, serialised as a decimal string because a JSON number cannot carry the full range without loss of precision.",
               "enumValues": [],
               "fields": [],
@@ -220,129 +230,11 @@
                   "deprecationReason": "",
                   "description": "",
                   "isDeprecated": false,
-                  "name": "edges",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "LIST",
-                      "name": null,
-                      "ofType": {
-                        "kind": "NON_NULL",
-                        "name": null,
-                        "ofType": {
-                          "kind": "OBJECT",
-                          "name": "NonNullUserEdge",
-                          "ofType": null
-                        }
-                      }
-                    }
-                  }
-                },
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "pageInfo",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "PageInfo",
-                      "ofType": null
-                    }
-                  }
-                },
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "totalCount",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "SCALAR",
-                      "name": "Int64",
-                      "ofType": null
-                    }
-                  }
-                }
-              ],
-              "inputFields": [],
-              "interfaces": [],
-              "kind": "OBJECT",
-              "name": "NonNullUserConnection",
-              "possibleTypes": []
-            },
-            {
-              "description": "",
-              "enumValues": [],
-              "fields": [
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "cursor",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "SCALAR",
-                      "name": "String",
-                      "ofType": null
-                    }
-                  }
-                },
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "node",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "NON_NULL",
-                      "name": null,
-                      "ofType": {
-                        "kind": "OBJECT",
-                        "name": "user",
-                        "ofType": null
-                      }
-                    }
-                  }
-                }
-              ],
-              "inputFields": [],
-              "interfaces": [],
-              "kind": "OBJECT",
-              "name": "NonNullUserEdge",
-              "possibleTypes": []
-            },
-            {
-              "description": "",
-              "enumValues": [],
-              "fields": [
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
                   "name": "endCursor",
                   "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "SCALAR",
-                      "name": "String",
-                      "ofType": null
-                    }
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
                   }
                 },
                 {
@@ -366,7 +258,7 @@
                   "deprecationReason": "",
                   "description": "",
                   "isDeprecated": false,
-                  "name": "hasPrevPage",
+                  "name": "hasPreviousPage",
                   "type": {
                     "kind": "NON_NULL",
                     "name": null,
@@ -408,13 +300,9 @@
                   "isDeprecated": false,
                   "name": "startCursor",
                   "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "SCALAR",
-                      "name": "String",
-                      "ofType": null
-                    }
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
                   }
                 }
               ],
@@ -562,7 +450,7 @@
                       "name": "first",
                       "type": {
                         "kind": "SCALAR",
-                        "name": "Int64",
+                        "name": "Int",
                         "ofType": null
                       }
                     },
@@ -572,7 +460,7 @@
                       "name": "last",
                       "type": {
                         "kind": "SCALAR",
-                        "name": "Int64",
+                        "name": "Int",
                         "ofType": null
                       }
                     },
@@ -606,7 +494,7 @@
                     "name": null,
                     "ofType": {
                       "kind": "OBJECT",
-                      "name": "NonNullUserConnection",
+                      "name": "userConnection",
                       "ofType": null
                     }
                   }
@@ -677,7 +565,7 @@
                       "name": "first",
                       "type": {
                         "kind": "SCALAR",
-                        "name": "Int64",
+                        "name": "Int",
                         "ofType": null
                       }
                     },
@@ -687,7 +575,7 @@
                       "name": "last",
                       "type": {
                         "kind": "SCALAR",
-                        "name": "Int64",
+                        "name": "Int",
                         "ofType": null
                       }
                     },
@@ -721,7 +609,7 @@
                     "name": null,
                     "ofType": {
                       "kind": "OBJECT",
-                      "name": "UserConnection",
+                      "name": "userConnection",
                       "ofType": null
                     }
                   }
@@ -848,116 +736,6 @@
               "interfaces": [],
               "kind": "SCALAR",
               "name": "String",
-              "possibleTypes": []
-            },
-            {
-              "description": "",
-              "enumValues": [],
-              "fields": [
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "edges",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "LIST",
-                      "name": null,
-                      "ofType": {
-                        "kind": "NON_NULL",
-                        "name": null,
-                        "ofType": {
-                          "kind": "OBJECT",
-                          "name": "UserEdge",
-                          "ofType": null
-                        }
-                      }
-                    }
-                  }
-                },
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "pageInfo",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "PageInfo",
-                      "ofType": null
-                    }
-                  }
-                },
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "totalCount",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "SCALAR",
-                      "name": "Int64",
-                      "ofType": null
-                    }
-                  }
-                }
-              ],
-              "inputFields": [],
-              "interfaces": [],
-              "kind": "OBJECT",
-              "name": "UserConnection",
-              "possibleTypes": []
-            },
-            {
-              "description": "",
-              "enumValues": [],
-              "fields": [
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "cursor",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "SCALAR",
-                      "name": "String",
-                      "ofType": null
-                    }
-                  }
-                },
-                {
-                  "args": [],
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "node",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "OBJECT",
-                      "name": "user",
-                      "ofType": null
-                    }
-                  }
-                }
-              ],
-              "inputFields": [],
-              "interfaces": [],
-              "kind": "OBJECT",
-              "name": "UserEdge",
               "possibleTypes": []
             },
             {
@@ -1239,6 +1017,116 @@
               "interfaces": [],
               "kind": "OBJECT",
               "name": "user",
+              "possibleTypes": []
+            },
+            {
+              "description": "A paginated list of user, following the Relay Cursor Connections specification.",
+              "enumValues": [],
+              "fields": [
+                {
+                  "args": [],
+                  "deprecationReason": "",
+                  "description": "",
+                  "isDeprecated": false,
+                  "name": "edges",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "LIST",
+                      "name": null,
+                      "ofType": {
+                        "kind": "NON_NULL",
+                        "name": null,
+                        "ofType": {
+                          "kind": "OBJECT",
+                          "name": "userEdge",
+                          "ofType": null
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "args": [],
+                  "deprecationReason": "",
+                  "description": "",
+                  "isDeprecated": false,
+                  "name": "pageInfo",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "PageInfo",
+                      "ofType": null
+                    }
+                  }
+                },
+                {
+                  "args": [],
+                  "deprecationReason": "",
+                  "description": "",
+                  "isDeprecated": false,
+                  "name": "totalCount",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "Int64",
+                      "ofType": null
+                    }
+                  }
+                }
+              ],
+              "inputFields": [],
+              "interfaces": [],
+              "kind": "OBJECT",
+              "name": "userConnection",
+              "possibleTypes": []
+            },
+            {
+              "description": "An edge in a user connection.",
+              "enumValues": [],
+              "fields": [
+                {
+                  "args": [],
+                  "deprecationReason": "",
+                  "description": "A cursor for use in pagination.",
+                  "isDeprecated": false,
+                  "name": "cursor",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                },
+                {
+                  "args": [],
+                  "deprecationReason": "",
+                  "description": "The item at the end of the edge.",
+                  "isDeprecated": false,
+                  "name": "node",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "user",
+                      "ofType": null
+                    }
+                  }
+                }
+              ],
+              "inputFields": [],
+              "interfaces": [],
+              "kind": "OBJECT",
+              "name": "userEdge",
               "possibleTypes": []
             }
           ]
