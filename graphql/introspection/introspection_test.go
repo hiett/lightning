@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/samsarahq/go/snapshotter"
 	"github.com/hiett/lightning/graphql/introspection"
 	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning/internal/snapshotter"
 	"github.com/stretchr/testify/require"
 )
 

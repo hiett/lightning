@@ -268,8 +268,8 @@ func detectCyclesAndUnusedFragments(selectionSet *SelectionSet, globalFragments 
 //
 // Conflicts are selections that can not be merged, for example
 //
-//     foo: bar(id: 123)
-//     foo: baz(id: 456)
+//	foo: bar(id: 123)
+//	foo: baz(id: 456)
 //
 // A query cannot contain both selections, because they have the same alias
 // with different source names, and they also have different arguments.
@@ -334,7 +334,7 @@ type Query struct {
 func Parse(source string, vars map[string]interface{}) (*Query, error) {
 	document, err := parser.Parse(parser.ParseParams{Source: source})
 	if err != nil {
-		return nil, NewClientError(err.Error())
+		return nil, NewClientError("%s", err.Error())
 	}
 
 	var queryDefinition *ast.OperationDefinition
@@ -468,16 +468,16 @@ func MustParse(source string, vars map[string]interface{}) *Query {
 // A GraphQL query (the SelectionSet) is allowed to contain the same key
 // multiple times, as well as fragments. For example,
 //
-//     {
-//       groups { name }
-//       groups { name id }
-//       ... on Organization { groups { widgets { name } } }
-//     }
+//	{
+//	  groups { name }
+//	  groups { name id }
+//	  ... on Organization { groups { widgets { name } } }
+//	}
 //
 // Flatten simplifies the query into an array of selections, merging fields,
 // resulting in something like the new query
 //
-//     groups: { name name id { widgets { name } } }
+//	groups: { name name id { widgets { name } } }
 //
 // Flatten does _not_ flatten out the inner queries, so the name above does not
 // get flattened out yet.

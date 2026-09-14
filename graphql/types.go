@@ -154,13 +154,13 @@ type Schema struct {
 // A SelectionSet can contain multiple fields and multiple fragments. For
 // example, the query
 //
-//     {
-//       name
-//       ... UserFragment
-//       memberships {
-//         organization { name }
-//       }
-//     }
+//	{
+//	  name
+//	  ... UserFragment
+//	  memberships {
+//	    organization { name }
+//	  }
+//	}
 //
 // results in a root SelectionSet with two selections (name and memberships),
 // and one fragment (UserFragment). The subselection `organization { name }`
@@ -191,7 +191,7 @@ func (s *SelectionSet) ShallowCopy() *SelectionSet {
 //
 // The selection
 //
-//     me: user(id: 166) { name }
+//	me: user(id: 166) { name }
 //
 // has name "user" (representing the source field to be queried), alias "me"
 // (representing the name to be used in the output), args id: 166 (representing
@@ -231,8 +231,10 @@ type Fragment struct {
 // affect execution of the query in any way the server desires.
 //
 // The selections
-//     users @skip(if:true)
-//     drivers @include(if:true)
+//
+//	users @skip(if:true)
+//	drivers @include(if:true)
+//
 // would skip the users selection and keep the drivers selection depending
 // on the argument passed into the directive
 type Directive struct {

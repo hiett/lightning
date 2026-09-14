@@ -1,22 +1,39 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Thunder GraphiQL</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lightning GraphiQL</title>
+    <link rel="stylesheet" href="https://unpkg.com/graphiql@3.7.1/graphiql.min.css" />
     <style>
-      body {
-        margin: 0;
-        padding: 0;
-        font-family: sans-serif;
-      }
-      html, body, #root {
-        width: 100%;
-        height: 100%;
-      }
+      body { margin: 0; padding: 0; font-family: sans-serif; }
+      html, body, #root { width: 100%; height: 100%; }
     </style>
   </head>
   <body>
     <div id="root"></div>
+    <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/graphiql@3.7.1/graphiql.min.js"></script>
+    <script>
+      // ENDPOINT is rewritten server-side by the Go handler.
+      var ENDPOINT = '__LIGHTNING_GRAPHQL_ENDPOINT__';
+
+      async function fetcher(graphQLParams, opts) {
+        const response = await fetch(ENDPOINT, {
+          method: 'POST',
+          headers: Object.assign(
+            { 'Content-Type': 'application/json', Accept: 'application/json' },
+            (opts && opts.headers) || {}
+          ),
+          body: JSON.stringify(graphQLParams),
+          credentials: 'same-origin',
+        });
+        return response.json();
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(React.createElement(GraphiQL, { fetcher: fetcher }));
+    </script>
   </body>
 </html>

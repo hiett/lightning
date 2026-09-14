@@ -236,9 +236,9 @@ func executeNonExpensiveWorkUnit(unit *WorkUnit) []*WorkUnit {
 // executeNonBatchWorkUnitWithCaching wraps a resolve request in a reactive cache
 // call.
 // This function makes two assumptions:
-// - We assume that all the reactive cache will get cleared if there is an error.
-// - We assume that there is no "error-catching" mechanism that will stop an
-//   error from propagating all the way to the top of the request stack.
+//   - We assume that all the reactive cache will get cleared if there is an error.
+//   - We assume that there is no "error-catching" mechanism that will stop an
+//     error from propagating all the way to the top of the request stack.
 func executeNonBatchWorkUnitWithCaching(src interface{}, dest *outputNode, unit *WorkUnit) []*WorkUnit {
 	var workUnits []*WorkUnit
 	subDestRes, err := reactive.Cache(unit.Ctx, getWorkCacheKey(src, unit.field, unit.selection), func(ctx context.Context) (interface{}, error) {

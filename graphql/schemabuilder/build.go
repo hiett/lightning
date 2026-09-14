@@ -87,7 +87,6 @@ func (sb *schemaBuilder) getType(nodeType reflect.Type, forceListEntryNonNull bo
 			}
 		}
 
-
 		return &graphql.NonNull{Type: &graphql.List{Type: elementType}}, nil
 
 	default:

@@ -11,22 +11,22 @@
 // For example, consider the following objects old, new, and the resulting
 // diff:
 //
-//    old = {
-//      "name": "bob",
-//      "address": {"state": "ca", "city": "sf"},
-//      "age": 30
-//    }
-//    new = {
-//      "name": "alice",
-//      "address": {"state": "ca", "city": "oakland"},
-//      "friends": ["bob", "charlie]
-//    }
-//    diff = {
-//      "name": "alice",
-//      "address": {"city": "oakland"},
-//      "age": [],
-//      "friends": [["bob", "charlie]]
-//    }
+//	old = {
+//	  "name": "bob",
+//	  "address": {"state": "ca", "city": "sf"},
+//	  "age": 30
+//	}
+//	new = {
+//	  "name": "alice",
+//	  "address": {"state": "ca", "city": "oakland"},
+//	  "friends": ["bob", "charlie]
+//	}
+//	diff = {
+//	  "name": "alice",
+//	  "address": {"city": "oakland"},
+//	  "age": [],
+//	  "friends": [["bob", "charlie]]
+//	}
 //
 // The diff updates the name field to "alice", stored as a scalar. The diff
 // updates the address recursively, keeping the state, but changing the city
@@ -42,9 +42,9 @@
 // For example, consider the following arrays old, new, and the resulting
 // reordering:
 //
-//   old = [0, 1, 2, 3]
-//   new = [1, 2, 3, 4]
-//   reordering = [1, 2, 3, -1]
+//	old = [0, 1, 2, 3]
+//	new = [1, 2, 3, 4]
+//	reordering = [1, 2, 3, -1]
 //
 // The reordering indicates that the first 3 elements of the new array can
 // be found at positions 1, 2, 3 and of the old array. The fourth item in
@@ -53,25 +53,25 @@
 // To compress this reodering array, we replace runs of adjacent indices
 // as a tuple [start, length], so that the compressed reordering becomes
 //
-//   reordering = [1, 2, 3, -1]
-//   compressed = [[1, 3], -1]
+//	reordering = [1, 2, 3, -1]
+//	compressed = [[1, 3], -1]
 //
 // Finally, to identify complex objects in arrays, package diffs uses
 // a special "__key" field in objects. This must be a comparable value
 // that allows the algorithm to line up values in arrays. For example,
 //
-//   old = [
-//     {"__key": 10, "name": "bob", "age": 20"},
-//     {"__key": 13, "name": "alice"}
-//   ]
-//   new = [
-//     {"__key": 13, "name": "alice"}
-//     {"__key": 10, "name": "bob", "age": 23},
-//   ]
-//   diff = {
-//		"$": [1, 0],
-//      "1": {"age": 23}
-//   }
+//	  old = [
+//	    {"__key": 10, "name": "bob", "age": 20"},
+//	    {"__key": 13, "name": "alice"}
+//	  ]
+//	  new = [
+//	    {"__key": 13, "name": "alice"}
+//	    {"__key": 10, "name": "bob", "age": 23},
+//	  ]
+//	  diff = {
+//			"$": [1, 0],
+//	     "1": {"age": 23}
+//	  }
 //
 // Here, the diff first switches the order of the elements in the array,
 // using the __key field to identify the two objects, and then updates

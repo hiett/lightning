@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/samsarahq/go/oops"
 	"github.com/hiett/lightning/batch"
 	"github.com/hiett/lightning/diff"
 	"github.com/hiett/lightning/reactive"
@@ -124,7 +124,7 @@ func (c *conn) handleSubscribe(in *inEnvelope) error {
 	id := in.ID
 	var subscribe subscribeMessage
 	if err := json.Unmarshal(in.Message, &subscribe); err != nil {
-		return oops.Wrapf(err, "failed to parse subscribe message: %s", in.Message)
+		return fmt.Errorf("failed to parse subscribe message %s: %w", in.Message, err)
 	}
 
 	c.mu.Lock()
@@ -260,7 +260,7 @@ func (c *conn) handleMutate(in *inEnvelope) error {
 	id := in.ID
 	var mutate mutateMessage
 	if err := json.Unmarshal(in.Message, &mutate); err != nil {
-		return oops.Wrapf(err, "failed to parse mutate message: %s", in.Message)
+		return fmt.Errorf("failed to parse mutate message %s: %w", in.Message, err)
 	}
 
 	c.mu.Lock()

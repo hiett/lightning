@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/samsarahq/go/oops"
 	"github.com/hiett/lightning/graphql"
 )
 
@@ -26,7 +25,7 @@ func (sb *schemaBuilder) buildFunction(typ reflect.Type, m *method) (*graphql.Fi
 		if typ.Name() == "federation" {
 			return sb.buildShadowObjectFederationFunction(typ, m)
 		} else {
-			return nil, oops.Errorf("ShadowType %s is on %s insetad of the federation object type", m.ShadowObjectType.Name(), typ.Name())
+			return nil, fmt.Errorf("ShadowType %s is on %s instead of the federation object type", m.ShadowObjectType.Name(), typ.Name())
 		}
 	}
 
@@ -110,7 +109,7 @@ func (sb *schemaBuilder) buildFederatedFunction(typ reflect.Type, m *method) (*g
 	var argParser *argParser
 	returnType, err := sb.getType(m.RootObjectType, true)
 	if err != nil {
-		return nil, oops.Wrapf(err, "Invalid return type")
+		return nil, fmt.Errorf("invalid return type: %w", err)
 	}
 	field := &graphql.Field{
 		Resolve: func(ctx context.Context, source, funcRawArgs interface{}, selectionSet *graphql.SelectionSet) (interface{}, error) {
@@ -129,13 +128,15 @@ func (sb *schemaBuilder) buildFederatedFunction(typ reflect.Type, m *method) (*g
 
 // buildShadowObjectFederationFunction builds a federation object and a field func that takes the
 // federation keys as args and constructs the shadow object. This is used for federated subqueries.
-// {
-//   _federation {
-//     [ObjectName]-[Service] (keys: Keys) {
-//       subQuery
-//     }
-//   }
-// }
+//
+//	{
+//	  _federation {
+//	    [ObjectName]-[Service] (keys: Keys) {
+//	      subQuery
+//	    }
+//	  }
+//	}
+//
 // This generates a field func on the federated object that looks like the example below
 // federation.fieldfunc("[ObjectName]-[Service]", func(args *ShadowObject) (*ShadowObject) { return args})
 // This function allows us to reconstruct the object that the subQuery is nested on
@@ -155,18 +156,18 @@ func (sb *schemaBuilder) buildShadowObjectFederationFunction(typ reflect.Type, m
 
 	argParser, argType, _, err := funcCtx.getArgParserAndTyp(sb, in)
 	if err != nil {
-		return nil, oops.Wrapf(err, "Error parsing args for shadow object field")
+		return nil, fmt.Errorf("error parsing args for shadow object field: %w", err)
 	}
 	funcCtx.hasArgs = argParser != nil
 	args, err := funcCtx.argsTypeMap(argType)
 	if err != nil {
-		return nil, oops.Wrapf(err, "Error parsing args map for shadow object field")
+		return nil, fmt.Errorf("error parsing args map for shadow object field: %w", err)
 	}
 
 	// Return type is a nonnullable list of the shadow object type
 	returnType, err := sb.getType(m.ShadowObjectType, true)
 	if err != nil {
-		return nil, oops.Wrapf(err, "Invalid return type")
+		return nil, fmt.Errorf("invalid return type: %w", err)
 	}
 	rType := &graphql.NonNull{Type: &graphql.List{Type: returnType}}
 	field := &graphql.Field{

@@ -220,18 +220,20 @@ func BatchSortFieldWithFallback(name string, batchSort interface{}, sort interfa
 //
 // For example, for an object of type User, a fullName field might take just an
 // instance of the object:
-//    user.FieldFunc("fullName", func(u *User) string {
-//       return u.FirstName + " " + u.LastName
-//    })
+//
+//	user.FieldFunc("fullName", func(u *User) string {
+//	   return u.FirstName + " " + u.LastName
+//	})
 //
 // An addUser mutation field might take both a context and arguments:
-//    mutation.FieldFunc("addUser", func(ctx context.Context, args struct{
-//        FirstName string
-//        LastName  string
-//    }) (int, error) {
-//        userID, err := db.AddUser(ctx, args.FirstName, args.LastName)
-//        return userID, err
-//    })
+//
+//	mutation.FieldFunc("addUser", func(ctx context.Context, args struct{
+//	    FirstName string
+//	    LastName  string
+//	}) (int, error) {
+//	    userID, err := db.AddUser(ctx, args.FirstName, args.LastName)
+//	    return userID, err
+//	})
 func (s *Object) FieldFunc(name string, f interface{}, options ...FieldFuncOption) {
 	if s.Methods == nil {
 		s.Methods = make(Methods)
@@ -316,9 +318,11 @@ func (s *Object) ManualPaginationWithFallback(name string, manualPaginatedFunc i
 // Key registers the key field on an object. The field should be specified by the name of the
 // graphql field.
 // For example, for an object User:
-//   type struct User {
-//	   UserKey int64
-//   }
+//
+//	  type struct User {
+//		   UserKey int64
+//	  }
+//
 // The key will be registered as:
 // object.Key("userKey")
 func (s *Object) Key(f string) {
@@ -326,10 +330,10 @@ func (s *Object) Key(f string) {
 }
 
 type method struct {
-	MarkedNonNullable bool
+	MarkedNonNullable          bool
 	MarkedListEntryNonNullable bool
 
-	Fn                interface{}
+	Fn interface{}
 
 	// Whether or not the FieldFunc is paginated.
 	Paginated bool
@@ -402,11 +406,12 @@ type Methods map[string]*method
 //
 // For example, to denote that a return value that may be a *Asset or
 // *Vehicle might look like:
-//   type GatewayUnion struct {
-//     schemabuilder.Union
-//     *Asset
-//     *Vehicle
-//   }
+//
+//	type GatewayUnion struct {
+//	  schemabuilder.Union
+//	  *Asset
+//	  *Vehicle
+//	}
 //
 // Fields returning a union type should expect to return this type as a
 // one-hot struct, i.e. only Asset or Vehicle should be specified, but not both.

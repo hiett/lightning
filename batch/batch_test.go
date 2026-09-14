@@ -10,7 +10,6 @@ import (
 
 	"github.com/hiett/lightning/batch"
 	"github.com/stretchr/testify/assert"
-
 )
 
 // TestBasic tests that batch.Func with default options batches calls.

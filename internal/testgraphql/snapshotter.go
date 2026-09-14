@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/samsarahq/go/snapshotter"
 	"github.com/hiett/lightning/graphql"
 	"github.com/hiett/lightning/internal"
+	"github.com/hiett/lightning/internal/snapshotter"
 	"github.com/stretchr/testify/require"
 )
 

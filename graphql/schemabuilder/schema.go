@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/samsarahq/go/oops"
 	"github.com/hiett/lightning/graphql"
 )
 
@@ -56,19 +55,21 @@ func NewSchemaWithName(name string) *Schema {
 // the corresponding map of the enums.
 //
 // For example a enum could be declared as follows:
-//   type enumType int32
-//   const (
-//	  one   enumType = 1
-//	  two   enumType = 2
-//	  three enumType = 3
-//   )
+//
+//	  type enumType int32
+//	  const (
+//		  one   enumType = 1
+//		  two   enumType = 2
+//		  three enumType = 3
+//	  )
 //
 // Then the Enum can be registered as:
-//   s.Enum(enumType(1), map[string]interface{}{
-//     "one":   enumType(1),
-//     "two":   enumType(2),
-//     "three": enumType(3),
-//   })
+//
+//	s.Enum(enumType(1), map[string]interface{}{
+//	  "one":   enumType(1),
+//	  "two":   enumType(2),
+//	  "three": enumType(3),
+//	})
 func (s *Schema) Enum(val interface{}, enumMap interface{}) {
 	typ := reflect.TypeOf(val)
 	if s.enumTypes == nil {
@@ -337,7 +338,7 @@ func checkSchemaTypesAreUnique(objects map[string]*Object, enums map[reflect.Typ
 // other Objects that we can resolve in our GraphQL graph.
 func (s *Schema) Build() (*graphql.Schema, error) {
 	if err := checkSchemaTypesAreUnique(s.objects, s.enumTypes); err != nil {
-		return nil, oops.Wrapf(err, "type names in schema must be unique")
+		return nil, fmt.Errorf("type names in schema must be unique: %w", err)
 	}
 
 	sb := &schemaBuilder{

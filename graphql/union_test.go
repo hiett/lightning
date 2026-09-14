@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kylelemons/godebug/pretty"
 	"github.com/hiett/lightning/graphql"
 	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal"
 	"github.com/hiett/lightning/internal/testgraphql"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 type GatewayType int

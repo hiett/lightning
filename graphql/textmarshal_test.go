@@ -1,12 +1,13 @@
 package graphql_test
 
 import (
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal/testgraphql"
-	"github.com/satori/go.uuid"
 )
 
 func TestTextMarshaling(t *testing.T) {
@@ -147,11 +148,7 @@ func (u Uuid) MarshalText() ([]byte, error) {
 }
 
 func (u Uuid) string() string {
-	uuid, err := uuid.FromBytes([]byte(u.bytes[:]))
-	if err != nil {
-		return ""
-	}
-	return uuid.String()
+	return fmt.Sprintf("%x-%x-%x-%x-%x", u.bytes[0:4], u.bytes[4:6], u.bytes[6:8], u.bytes[8:10], u.bytes[10:16])
 }
 
 func (u *Uuid) UnmarshalText(data []byte) error {
@@ -159,11 +156,26 @@ func (u *Uuid) UnmarshalText(data []byte) error {
 		return nil
 	}
 
-	uu, err := uuid.FromString(string(data))
+	uu, err := parseUuid(string(data))
 	if err != nil {
 		return err
 	}
 
 	*u = Uuid{bytes: uu}
 	return nil
+}
+
+// parseUuid parses the canonical 8-4-4-4-12 hexadecimal UUID form.
+func parseUuid(s string) ([16]byte, error) {
+	var out [16]byte
+	if len(s) != 36 || s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-' {
+		return out, fmt.Errorf("uuid: invalid UUID string: %s", s)
+	}
+	stripped := s[0:8] + s[9:13] + s[14:18] + s[19:23] + s[24:36]
+	b, err := hex.DecodeString(stripped)
+	if err != nil {
+		return out, fmt.Errorf("uuid: invalid UUID string: %s", s)
+	}
+	copy(out[:], b)
+	return out, nil
 }

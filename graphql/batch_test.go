@@ -91,11 +91,9 @@ func TestBatchFieldFuncExecution(t *testing.T) {
 			objectFunc: func(ctx context.Context) []*Object { return []*Object{&Object{Key: "key1"}} },
 			resolverFunc: func(ctx context.Context, o map[batch.Index]Object) (map[batch.Index]string, error) {
 				panic("bad times")
-				return nil, errors.New("my error here")
 			},
 			resolverFallbackFunc: func(ctx context.Context, o Object) (*string, error) {
 				panic("bad times")
-				return nil, errors.New("my error here")
 			},
 			query: `
 			{

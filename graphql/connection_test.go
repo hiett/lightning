@@ -37,7 +37,7 @@ type ManualArgs struct {
 
 type TimeBasedArgs struct {
 	StartMs int64
-	EndMs int64
+	EndMs   int64
 }
 
 type Item struct {
@@ -49,8 +49,8 @@ type Item struct {
 }
 
 type AltItem struct {
-	Id int64
-	Time int64
+	Id     int64
+	Time   int64
 	Number int64
 }
 
@@ -1286,7 +1286,6 @@ func TestPaginatedFilters(t *testing.T) {
 			}),
 	)
 
-
 	inner.FieldFunc("innerConnectionWithFilterWithArgs", func(args TimeBasedArgs) []Item {
 		return []Item{
 			{Id: 1, FilterText: "can", String: "a"},
@@ -1337,7 +1336,7 @@ func TestPaginatedFilters(t *testing.T) {
 				return true
 			}),
 	)
-	
+
 	builtSchema := schema.MustBuild()
 
 	q := graphql.MustParse(`
