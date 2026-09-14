@@ -183,9 +183,17 @@ func (h *transportWSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn := &transportWSConn{
 		handler: h,
 		socket:  socket,
-		streams: map[string]context.CancelFunc{},
+		streams: map[string]*transportWSStream{},
 	}
 	conn.serve(r.Context())
+}
+
+// transportWSStream is one running operation. It is identified by pointer
+// rather than by its id, because a client may complete an operation and
+// immediately start another with the same id — and the finishing goroutine of
+// the first must not then unregister the second.
+type transportWSStream struct {
+	cancel context.CancelFunc
 }
 
 // transportWSConn is one websocket connection.
@@ -198,7 +206,7 @@ type transportWSConn struct {
 	writeMu sync.Mutex
 
 	mu          sync.Mutex
-	streams     map[string]context.CancelFunc
+	streams     map[string]*transportWSStream
 	initialised bool
 	closed      bool
 
@@ -346,29 +354,31 @@ func (c *transportWSConn) handleSubscribe(ctx context.Context, message *transpor
 	if err != nil {
 		// A request that never began executing is reported on the stream and
 		// the stream ends; the connection stays open.
-		c.writeErrors(message.ID, AsResponseErrors(err))
+		c.writeErrors(message.ID, nil, AsResponseErrors(err))
 		return nil
 	}
 
 	root, err := c.rootType(query.Kind)
 	if err != nil {
-		c.writeErrors(message.ID, AsResponseErrors(err))
+		c.writeErrors(message.ID, nil, AsResponseErrors(err))
 		return nil
 	}
 
 	if err := PrepareQuery(ctx, root, query.SelectionSet); err != nil {
-		c.writeErrors(message.ID, AsResponseErrors(err))
+		c.writeErrors(message.ID, nil, AsResponseErrors(err))
 		return nil
 	}
 
 	streamCtx, cancel := context.WithCancel(ctx)
+	stream := &transportWSStream{cancel: cancel}
+
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
 		cancel()
 		return nil
 	}
-	c.streams[message.ID] = cancel
+	c.streams[message.ID] = stream
 	c.mu.Unlock()
 
 	go func() {
@@ -376,7 +386,7 @@ func (c *transportWSConn) handleSubscribe(ctx context.Context, message *transpor
 		// context is derived from the connection's, which outlives it, and an
 		// uncancelled child stays attached to its parent.
 		defer cancel()
-		c.runStream(streamCtx, message.ID, query, root, payload)
+		c.runStream(streamCtx, message.ID, stream, query, root, payload)
 	}()
 	return nil
 }
@@ -400,16 +410,16 @@ func (c *transportWSConn) rootType(kind string) (Type, error) {
 
 // runStream executes one operation and, for a subscription, keeps re-executing
 // it until the client unsubscribes or the connection goes away.
-func (c *transportWSConn) runStream(ctx context.Context, id string, query *Query, root Type, payload subscribePayload) {
+func (c *transportWSConn) runStream(ctx context.Context, id string, stream *transportWSStream, query *Query, root Type, payload subscribePayload) {
 	if query.Kind == "subscription" {
-		c.runLive(ctx, id, query, root, payload)
+		c.runLive(ctx, id, stream, query, root, payload)
 	} else {
-		c.runOnce(ctx, id, query, root, payload)
+		c.runOnce(ctx, id, stream, query, root, payload)
 	}
 
 	// A client that cancelled the stream already removed it and expects
 	// nothing further; a stream that finished on its own owes a complete.
-	if c.removeStream(id) {
+	if c.removeStream(id, stream) {
 		c.write(transportWSMessage{ID: id, Type: msgComplete})
 	}
 }
@@ -443,11 +453,11 @@ func (c *transportWSConn) execute(ctx context.Context, id string, query *Query, 
 // re-execution, and reactive.AddDependency and reactive.Cache both work outside
 // one, so running directly avoids holding a computation open for an operation
 // that will never run again.
-func (c *transportWSConn) runOnce(ctx context.Context, id string, query *Query, root Type, payload subscribePayload) {
+func (c *transportWSConn) runOnce(ctx context.Context, id string, stream *transportWSStream, query *Query, root Type, payload subscribePayload) {
 	result, err := c.execute(ctx, id, query, root, payload, true)
 	if err != nil {
 		if ErrorCause(err) != context.Canceled {
-			c.writeErrors(id, AsResponseErrors(err))
+			c.writeErrors(id, stream, AsResponseErrors(err))
 		}
 		return
 	}
@@ -465,7 +475,7 @@ func (c *transportWSConn) runOnce(ctx context.Context, id string, query *Query, 
 // An error ends the stream with an error message, which the protocol treats as
 // terminal for that operation. A subscription that wants to survive a transient
 // failure should retry inside its resolver.
-func (c *transportWSConn) runLive(ctx context.Context, id string, query *Query, root Type, payload subscribePayload) {
+func (c *transportWSConn) runLive(ctx context.Context, id string, stream *transportWSStream, query *Query, root Type, payload subscribePayload) {
 	var once sync.Once
 	finished := make(chan struct{})
 	done := func() { once.Do(func() { close(finished) }) }
@@ -477,7 +487,7 @@ func (c *transportWSConn) runLive(ctx context.Context, id string, query *Query, 
 
 		if err != nil {
 			if ErrorCause(err) != context.Canceled {
-				c.writeErrors(id, AsResponseErrors(err))
+				c.writeErrors(id, stream, AsResponseErrors(err))
 			}
 			done()
 			return nil, err
@@ -524,13 +534,13 @@ func (c *transportWSConn) write(message transportWSMessage) {
 	}
 }
 
-func (c *transportWSConn) writeErrors(id string, errs []*ResponseError) {
+func (c *transportWSConn) writeErrors(id string, stream *transportWSStream, errs []*ResponseError) {
 	c.write(transportWSMessage{
 		ID:      id,
 		Type:    msgError,
 		Payload: mustMarshalPayload(errs),
 	})
-	c.removeStream(id)
+	c.removeStream(id, stream)
 }
 
 // closeWith sends a protocol close frame and marks the connection closed. It
@@ -559,10 +569,15 @@ func (c *transportWSConn) closeWith(code int, reason string) error {
 }
 
 // removeStream forgets a stream, reporting whether it was still registered.
-func (c *transportWSConn) removeStream(id string) bool {
+//
+// The pointer is checked as well as the id: a client may complete an operation
+// and immediately subscribe another with the same id, and the first
+// operation's goroutine must not unregister the second or send a complete
+// that belongs to it.
+func (c *transportWSConn) removeStream(id string, stream *transportWSStream) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.streams[id]; !ok {
+	if current, ok := c.streams[id]; !ok || (stream != nil && current != stream) {
 		return false
 	}
 	delete(c.streams, id)
@@ -571,14 +586,14 @@ func (c *transportWSConn) removeStream(id string) bool {
 
 func (c *transportWSConn) cancelStream(id string) {
 	c.mu.Lock()
-	cancel, ok := c.streams[id]
+	stream, ok := c.streams[id]
 	if ok {
 		delete(c.streams, id)
 	}
 	c.mu.Unlock()
 
 	if ok {
-		cancel()
+		stream.cancel()
 	}
 }
 
@@ -586,8 +601,8 @@ func (c *transportWSConn) cancelAllStreams() {
 	c.mu.Lock()
 	c.closed = true
 	cancels := make([]context.CancelFunc, 0, len(c.streams))
-	for id, cancel := range c.streams {
-		cancels = append(cancels, cancel)
+	for id, stream := range c.streams {
+		cancels = append(cancels, stream.cancel)
 		delete(c.streams, id)
 	}
 	c.mu.Unlock()

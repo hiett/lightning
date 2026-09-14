@@ -48,16 +48,34 @@ func (s *MemorySource) Publish(ctx context.Context, keys []string) error {
 
 // Subscribe delivers published keys until ctx is done.
 func (s *MemorySource) Subscribe(ctx context.Context, deliver func(keys []string)) error {
+	// done guards the caller's deliver: Publish snapshots the subscriber list
+	// and then calls out of the lock, so without this a publish that began
+	// before Subscribe returned could still call deliver after it had.
+	var done bool
+	var mu sync.Mutex
+	guarded := func(keys []string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if done {
+			return
+		}
+		deliver(keys)
+	}
+
 	s.mu.Lock()
 	id := s.next
 	s.next++
-	s.subscribers[id] = deliver
+	s.subscribers[id] = guarded
 	s.mu.Unlock()
 
 	defer func() {
 		s.mu.Lock()
 		delete(s.subscribers, id)
 		s.mu.Unlock()
+
+		mu.Lock()
+		done = true
+		mu.Unlock()
 	}()
 
 	<-ctx.Done()

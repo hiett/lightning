@@ -333,3 +333,30 @@ func TestTransportWSConnectionInitContextReachesResolvers(t *testing.T) {
 	require.Equal(t, "ada", dataOf(t, client.read())["whoami"],
 		"the context returned by connection_init must reach the resolver")
 }
+
+// TestTransportWSStreamIDReuse checks that completing an operation and
+// immediately starting another with the same id works.
+//
+// A finishing operation used to unregister whatever was registered under its
+// id, so the second operation lost its registration and received a complete
+// that belonged to the first.
+func TestTransportWSStreamIDReuse(t *testing.T) {
+	server, _ := transportWSServer(t)
+	client := dialTransportWS(t, server)
+	client.init()
+
+	// A query, which completes on its own.
+	client.sendPayload("reused", "subscribe", map[string]interface{}{"query": "{ value }"})
+	require.Equal(t, float64(0), dataOf(t, client.read())["value"])
+	require.Equal(t, "complete", client.read().Type)
+
+	// The same id again, now for a subscription.
+	client.sendPayload("reused", "subscribe", map[string]interface{}{
+		"query": "subscription { value }",
+	})
+	require.Equal(t, float64(0), dataOf(t, client.read())["value"])
+
+	// It is a live subscription, not a stream that was silently unregistered.
+	client.send(wsMessage{Type: "ping"})
+	require.Equal(t, "pong", client.read().Type)
+}
