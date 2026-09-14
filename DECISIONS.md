@@ -430,3 +430,103 @@ consuming project wires one up in a three-line `main` and calls it from `go:gene
 `example/` demonstrates. The file is written atomically — rendered to a temporary file in the same
 directory, then renamed — so a failed build step leaves the previous schema in place rather than a
 truncated one.
+
+## D21. What the adversarial review found, and what was done about it
+
+After the ten phases were complete, the tree was reviewed by five independent
+reviewers across parser/validation, execution and the type system, Node and
+scalars, the websocket and concurrency, and connections. Every candidate finding
+was then handed to a separate verifier whose job was to *refute* it by running
+real code. Thirty-one survived. The ones that changed code:
+
+**Correctness bugs in code this refactor wrote**
+
+- **Multi-operation documents were rejected.** `orderFragments` walked only the
+  selected operation but checked "unused fragment" against every fragment in the
+  document, so a two-operation document with a fragment each failed whichever
+  operation you asked for — breaking the `operationName` support of D8 the day it
+  landed. The unused check now considers every operation.
+- **Interface field arguments were parsed once and reused.** A field selected
+  directly on an interface is resolved against every implementing type, and each
+  has its own Go argument struct. The first implementation's struct was handed to
+  all of them, which is a type error. Arguments are now parsed per implementing
+  type and carried on the selection (`Selection.ArgsForType`).
+- **`{ __typename }` on the root operation was an internal server error**, because
+  the root type has no field of that name. Relay asks for it.
+- **A type condition naming a union was silently dropped**, and a union value
+  whose selection set matched no fragment resolved to null rather than an object.
+  `FragmentApplies` now knows about union membership, and unions go through the
+  same path as interfaces.
+- **A union member registered under a name other than its Go field name crashed
+  the process**, because the executor matched by field name and called `IsNil` on
+  the resulting zero `reflect.Value`. Unions now use the same field-index type
+  resolver as interfaces, which also lifts the rename limitation recorded in D13.
+- **`PrintSchema` silently dropped a second type sharing a name** — along with
+  everything reachable only through it — and which one won was decided by map
+  iteration order, so the committed schema flipped between runs. It is an error
+  now, the schema builder refuses a generated name that collides with a
+  registered one, and two paginated fields over one node type share one
+  connection type instead of minting two.
+- **The printer mutated the schema it was printing**, naming anonymous input
+  objects from a counter written into the type. That made output depend on how
+  many times it had run and two concurrent prints a data race. Names now come
+  from the object's own shape.
+- **`@skip`/`@include` were ignored on any field selected more than once.**
+  Merging occurrences dropped their directives, so a skipped occurrence not only
+  ran but contributed its sub-selections to a sibling. Directives are now applied
+  per occurrence, before merging, as the specification requires.
+- **`__typename` ignored `@skip`/`@include`** because it was written before the
+  directive check.
+- **Integer literals above 2^53 were rounded** on the way through `float64`. They
+  keep their `int64` type now, and the argument parsers accept both.
+- **`Int` arguments were never range- or integer-checked**: out-of-range values
+  wrapped and fractional ones truncated, silently.
+- **`hasNextPage` was computed against a stale count** when `after` and `before`
+  were used together, so a page at the end of a list claimed another page and a
+  client paginating forward asked for it for ever.
+- **A description containing `"""` produced SDL that would not parse.**
+- **`connection_init`'s returned context was thrown away**, so the authentication
+  hook could not actually carry identity into resolvers — which is what its own
+  documentation said it was for.
+- **Every completed operation leaked its `context.CancelFunc`**, and a client
+  that stopped reading could pin a writer for ever. Streams are cancelled on
+  completion and writes have a deadline.
+- **A finishing operation unregistered whatever held its id**, so a client that
+  reused an id lost the new operation's registration.
+- Node registration mistakes panicked out of `Build` instead of being returned,
+  and the generated `Node` name was not reserved.
+- `filterText` on a connection with nothing filterable dropped every row and
+  reported a total of zero; `sortBy` on an unregistered field produced "Internal
+  server error". Both are client errors with usable messages now.
+- A client-safe error lost its response path, because `nestPathError` returned
+  `SanitizedError`s undecorated. Paths are for clients, so that is exactly
+  backwards; `IsSanitized` looks through the decoration.
+
+**Bugs inherited from thunder**
+
+- **`diff` corrupted every field that was new since the last execution.** A new
+  field's value went into the diff raw, which is indistinguishable from a diff
+  node: a new field holding `[]` was read as a deletion, `[v]` was unwrapped to
+  `v`, and an object was recursed into as though it were a diff. Since a live
+  query re-executes whenever its data changes, and a field appearing for the
+  first time is completely ordinary, this corrupted live-query payloads
+  routinely. New fields are marked as replacements now.
+- **A `reactive.Resource` was permanently poisoned once its last dependent went
+  away.** `release()` invalidates, `invalidated` is sticky, and `addOut` then
+  invalidated every new dependent — which re-ran, depended again, and spun for
+  ever, burning a full query execution each time. One ordinary HTTP request
+  against a resource with no current subscribers was enough to trigger it.
+  Holding a `Resource` on a struct is the documented pattern and thunder's own
+  tests do it. A released node no longer propagates its invalidation.
+- **The reactive test suite had three data races** and `Expect.Trigger` panicked
+  on a second call (D15).
+
+**Not changed, and why**
+
+- `__key` appears in plain HTTP responses for any type with a key field. It is
+  the correlation token the diff algorithm needs and the executor emits it
+  regardless of transport. Relay ignores unknown fields and `js/` strips it.
+- `detectConflicts` only examines the top level of a query. gqlparser's validator
+  does the complete job before execution, so this is redundant rather than wrong.
+- Invalidation reruns fan out serially. It is a throughput characteristic of the
+  reactive core, not a correctness problem.
