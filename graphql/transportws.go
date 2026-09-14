@@ -187,6 +187,19 @@ type transportWSConn struct {
 	streams     map[string]context.CancelFunc
 	initialised bool
 	closed      bool
+
+	// ctx is the context every operation on this connection runs under. It
+	// starts as the request's context and is replaced by whatever
+	// WithTransportWSConnectionInit returns, which is how a connection's
+	// identity reaches resolvers.
+	ctx context.Context
+}
+
+// operationContext returns the context operations on this connection run under.
+func (c *transportWSConn) operationContext() context.Context {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ctx
 }
 
 func (c *transportWSConn) serve(parent context.Context) {
@@ -194,6 +207,10 @@ func (c *transportWSConn) serve(parent context.Context) {
 
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
+
+	c.mu.Lock()
+	c.ctx = ctx
+	c.mu.Unlock()
 
 	// A client that connects and says nothing holds a connection open forever.
 	initTimer := time.AfterFunc(c.handler.connectionInitTimeout, func() {
@@ -259,8 +276,17 @@ func (c *transportWSConn) handleConnectionInit(ctx context.Context, message *tra
 	c.mu.Unlock()
 
 	if c.handler.onConnectionInit != nil {
-		if _, err := c.handler.onConnectionInit(ctx, message.Payload); err != nil {
+		initialised, err := c.handler.onConnectionInit(ctx, message.Payload)
+		if err != nil {
 			return c.closeWith(closeUnauthorized, err.Error())
+		}
+		if initialised != nil {
+			// Operations run under this from now on. It is expected to derive
+			// from the context passed in, so that closing the connection still
+			// cancels everything running on it.
+			c.mu.Lock()
+			c.ctx = initialised
+			c.mu.Unlock()
 		}
 	}
 
@@ -288,6 +314,8 @@ func (c *transportWSConn) handleSubscribe(ctx context.Context, message *transpor
 	if err := json.Unmarshal(message.Payload, &payload); err != nil {
 		return c.closeWith(closeBadRequest, fmt.Sprintf("Invalid subscribe payload: %s", err))
 	}
+
+	ctx = c.operationContext()
 
 	query, err := c.handler.validator.Parse(payload.Query, payload.Variables, payload.OperationName)
 	if err != nil {

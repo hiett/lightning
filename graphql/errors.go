@@ -57,6 +57,19 @@ func WrapAsSafeError(err error, format string, a ...interface{}) error {
 	return SafeError{inner: err, message: fmt.Sprintf(format, a...)}
 }
 
+// IsSanitized reports whether an error is safe to show a client.
+//
+// It looks through the path decoration the executor adds as an error unwinds,
+// which a bare `err.(SanitizedError)` type assertion does not: a client-safe
+// error that came from a field several levels down is still client-safe.
+func IsSanitized(err error) bool {
+	if pe, ok := err.(*pathError); ok {
+		return IsSanitized(pe.inner)
+	}
+	_, ok := err.(SanitizedError)
+	return ok
+}
+
 // SanitizeError returns a sanitized error message for an error.
 //
 // It looks through a path decoration, so that an error which was safe to show a

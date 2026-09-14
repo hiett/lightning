@@ -338,8 +338,8 @@ func (p *sdlPrinter) printType(b *strings.Builder, name string, typ Type) error 
 		values := append([]string(nil), typ.Values...)
 		sort.Strings(values)
 		for _, value := range values {
-			if !isValidGraphQLName(value) {
-				return fmt.Errorf("enum %s has value %q, which is not a legal GraphQL name", name, value)
+			if !isValidEnumValue(value) {
+				return fmt.Errorf("enum %s has value %q, which is not a legal GraphQL enum value", name, value)
 			}
 			writeDescription(b, "  ", typ.Descriptions[value])
 			fmt.Fprintf(b, "  %s%s\n", value, deprecationSuffix(typ.DeprecationReasons[value]))
@@ -513,6 +513,12 @@ func writeDescription(b *strings.Builder, indent, description string) {
 	if description == "" {
 		return
 	}
+
+	// A description holding a block-string terminator would close the string
+	// early and leave the rest of the text to be lexed as schema syntax. The
+	// specification's escape for it inside a block string is \""".
+	description = strings.ReplaceAll(description, `"""`, `\"""`)
+
 	b.WriteString(indent)
 	b.WriteString(`"""`)
 	b.WriteString("\n")
@@ -548,6 +554,16 @@ func quoteGraphQLString(s string) string {
 	}
 	b.WriteByte('"')
 	return b.String()
+}
+
+// isValidEnumValue reports whether name is legal as an enum value: a Name that
+// is not one of the three literals the specification excludes.
+func isValidEnumValue(name string) bool {
+	switch name {
+	case "true", "false", "null":
+		return false
+	}
+	return isValidGraphQLName(name)
 }
 
 // isValidGraphQLName reports whether name matches the specification's Name

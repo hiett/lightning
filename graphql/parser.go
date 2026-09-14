@@ -24,9 +24,16 @@ func valueToJSON(value *ast.Value, vars map[string]interface{}) (interface{}, er
 		if err != nil {
 			return nil, NewClientError("bad int arg: %s", err)
 		}
-		// Integers are represented as float64 so that arguments coming from a
-		// literal and arguments coming from JSON variables have the same Go type.
-		return float64(v), nil
+		// Integers are represented as float64 so that an argument from a literal
+		// and the same argument from a JSON variable have the same Go type —
+		// except where that would lose precision. Above 2^53 a float64 cannot
+		// hold every integer, and rounding an Int64 literal to the nearest
+		// representable double would corrupt it silently, so such a value keeps
+		// its int64 type and the scalar argument parsers accept both.
+		if asFloat := float64(v); int64(asFloat) == v {
+			return asFloat, nil
+		}
+		return v, nil
 
 	case ast.FloatValue:
 		v, err := strconv.ParseFloat(value.Raw, 64)
@@ -231,15 +238,19 @@ const (
 )
 
 // orderFragments finds fragments that transitively include themselves, as well
-// as fragments that are defined but never spread, and returns the fragment
-// names in dependency order: a fragment always appears after every fragment it
-// spreads.
+// as fragments the document defines but no operation spreads, and returns the
+// names of the fragments the selected operation needs in dependency order: a
+// fragment always appears after every fragment it spreads.
 //
 // It runs over the gqlparser AST, before conversion, because fragment identity
 // there is a name rather than a pointer. The ordering matters because
 // converting a fragment spread copies the spread fragment's already-converted
 // selection set.
-func orderFragments(operation *ast.OperationDefinition, fragments map[string]*ast.FragmentDefinition) ([]string, error) {
+//
+// The unused check looks at *every* operation in the document, not only the one
+// being run: a document holding two operations with a fragment each is legal,
+// and the fragment belonging to the operation not being run is not unused.
+func orderFragments(document *ast.QueryDocument, operation *ast.OperationDefinition, fragments map[string]*ast.FragmentDefinition) ([]string, error) {
 	state := make(map[string]visitState, len(fragments))
 	order := make([]string, 0, len(fragments))
 
@@ -291,6 +302,20 @@ func orderFragments(operation *ast.OperationDefinition, fragments map[string]*as
 
 	if err := visitSelectionSet(operation.SelectionSet); err != nil {
 		return nil, err
+	}
+
+	// The fragments the selected operation needs, in the order they must be
+	// converted. Anything reached below this point belongs to another operation
+	// and is never converted.
+	order = order[:len(order):len(order)]
+
+	for _, other := range document.Operations {
+		if other == operation {
+			continue
+		}
+		if err := visitSelectionSet(other.SelectionSet); err != nil {
+			return nil, err
+		}
 	}
 
 	for name := range fragments {
@@ -424,9 +449,12 @@ func parseDocument(document *ast.QueryDocument, vars map[string]interface{}, ope
 		SelectionSet: nil,
 	}
 
-	vars = applyVariableDefaults(operation, vars)
+	vars, err = applyVariableDefaults(operation, vars)
+	if err != nil {
+		return rv, err
+	}
 
-	order, err := orderFragments(operation, fragmentDefinitions)
+	order, err := orderFragments(document, operation, fragmentDefinitions)
 	if err != nil {
 		return rv, err
 	}
@@ -467,7 +495,7 @@ func parseDocument(document *ast.QueryDocument, vars map[string]interface{}, ope
 // Following the specification's CoerceVariableValues, a variable that was
 // supplied explicitly as null keeps its null: only an absent variable takes the
 // default.
-func applyVariableDefaults(operation *ast.OperationDefinition, vars map[string]interface{}) map[string]interface{} {
+func applyVariableDefaults(operation *ast.OperationDefinition, vars map[string]interface{}) (map[string]interface{}, error) {
 	var defaulted map[string]interface{}
 
 	for _, variableDefinition := range operation.VariableDefinitions {
@@ -489,17 +517,18 @@ func applyVariableDefaults(operation *ast.OperationDefinition, vars map[string]i
 		// is the correct environment to evaluate them in.
 		value, err := valueToJSON(variableDefinition.DefaultValue, nil)
 		if err != nil {
-			// The parser only produces literal default values, so this cannot
-			// fail for a document that parsed. Leave the variable unset.
-			continue
+			// A literal that parses but cannot be converted — an integer beyond
+			// int64, say — is a real error and reported as one rather than
+			// leaving the variable quietly unset.
+			return nil, NewClientError("bad default value for $%s: %s", variableDefinition.Variable, err)
 		}
 		defaulted[variableDefinition.Variable] = value
 	}
 
 	if defaulted != nil {
-		return defaulted
+		return defaulted, nil
 	}
-	return vars
+	return vars, nil
 }
 
 // FlattenAll flattens a selection set keeping every fragment, regardless of
@@ -585,6 +614,13 @@ func Flatten(selectionSet *SelectionSet, typ *Object) ([]*Selection, error) {
 
 		merged := &SelectionSet{}
 		for _, selection := range selections {
+			// A group can hold a selection without a sub-selection alongside one
+			// with: the conflict check compares names and arguments, not
+			// shapes, and schema validation — which would reject the pair —
+			// does not have to have been run.
+			if selection.SelectionSet == nil {
+				continue
+			}
 			merged.Selections = append(merged.Selections, selection.SelectionSet.Selections...)
 			merged.Fragments = append(merged.Fragments, selection.SelectionSet.Fragments...)
 		}

@@ -299,3 +299,37 @@ func TestTransportWSConnectionInitCallback(t *testing.T) {
 	accepted.sendPayload("", "connection_init", map[string]interface{}{"token": "secret"})
 	require.Equal(t, "connection_ack", accepted.read().Type)
 }
+
+// TestTransportWSConnectionInitContextReachesResolvers checks that the context
+// the connection_init callback returns is the one operations actually run
+// under, which is how a connection's identity gets to a resolver.
+func TestTransportWSConnectionInitContextReachesResolvers(t *testing.T) {
+	type userKey struct{}
+
+	schema := schemabuilder.NewSchema()
+	schema.Query().FieldFunc("whoami", func(ctx context.Context) string {
+		if name, ok := ctx.Value(userKey{}).(string); ok {
+			return name
+		}
+		return "nobody"
+	})
+	built := schema.MustBuild()
+
+	server := httptest.NewServer(graphql.TransportWSHandler(built,
+		graphql.WithTransportWSConnectionInit(func(ctx context.Context, payload json.RawMessage) (context.Context, error) {
+			var creds struct {
+				User string `json:"user"`
+			}
+			_ = json.Unmarshal(payload, &creds)
+			return context.WithValue(ctx, userKey{}, creds.User), nil
+		})))
+	defer server.Close()
+
+	client := dialTransportWS(t, server)
+	client.sendPayload("", "connection_init", map[string]interface{}{"user": "ada"})
+	require.Equal(t, "connection_ack", client.read().Type)
+
+	client.sendPayload("1", "subscribe", map[string]interface{}{"query": "{ whoami }"})
+	require.Equal(t, "ada", dataOf(t, client.read())["whoami"],
+		"the context returned by connection_init must reach the resolver")
+}

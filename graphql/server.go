@@ -235,7 +235,7 @@ func (c *conn) handleSubscribe(in *inEnvelope) error {
 				// without dumping the contents of the current computation cache.
 				// Note that we are swallowing the propagation of the error in this case,
 				// but we still log it.
-				if _, ok := err.(SanitizedError); !ok {
+				if !IsSanitized(err) {
 					extraTags := map[string]string{"retry": "true"}
 					for k, v := range tags {
 						extraTags[k] = v
@@ -254,7 +254,7 @@ func (c *conn) handleSubscribe(in *inEnvelope) error {
 			})
 			go c.closeSubscription(id)
 
-			if _, ok := err.(SanitizedError); !ok {
+			if !IsSanitized(err) {
 				c.logger.Error(ctx, err, tags)
 			}
 			return nil, err
@@ -371,7 +371,7 @@ func (c *conn) handleMutate(in *inEnvelope) error {
 				return nil, err
 			}
 
-			if _, ok := err.(SanitizedError); !ok {
+			if !IsSanitized(err) {
 				c.logger.Error(ctx, err, tags)
 			}
 			return nil, err

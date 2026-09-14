@@ -70,7 +70,13 @@ export function createLightningNetwork(
     }
 
     if (request.operationKind === "mutation") {
-      return connection.mutate(operation).then(toGraphQLResponse);
+      return connection.mutate(operation).then((message) =>
+        // A result is a complete payload wrapped as a replacement -- the server
+        // diffs it against nothing -- so it still has to go through merge to be
+        // unwrapped. Handing Relay the wrapper would give it a one-element list
+        // where the data should be.
+        toGraphQLResponse(merge(undefined, message)),
+      );
     }
 
     return fetchOnce(connection, operation);

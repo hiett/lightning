@@ -171,6 +171,10 @@ func unwrapID(source interface{}) (interface{}, error) {
 // sends a value that has already lost precision should be.
 func parseInt64Arg(value interface{}) (int64, error) {
 	switch value := value.(type) {
+	case int64:
+		// A literal too large to survive float64 keeps its integer type; see
+		// valueToJSON.
+		return value, nil
 	case string:
 		parsed, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
@@ -192,6 +196,11 @@ func parseInt64Arg(value interface{}) (int64, error) {
 // above the signed maximum survive.
 func parseUint64Arg(value interface{}) (uint64, error) {
 	switch value := value.(type) {
+	case int64:
+		if value < 0 {
+			return 0, fmt.Errorf("%d is negative", value)
+		}
+		return uint64(value), nil
 	case string:
 		parsed, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {

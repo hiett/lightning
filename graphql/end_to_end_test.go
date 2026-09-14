@@ -80,11 +80,16 @@ func TestPathError(t *testing.T) {
 
 	e = testgraphql.NewExecutorWrapper(t)
 	_, err = e.Execute(context.Background(), builtSchema.Query, nil, q)
-	if err == nil || err.Error() != "safe safe" {
+	// A client-safe error is decorated with its path like any other, so that a
+	// client can tell which field failed; the message is recoverable from it.
+	if err == nil || err.Error() != "safe: safe safe" {
 		t.Errorf("bad error: %v", err)
 	}
-	if _, ok := err.(graphql.SanitizedError); !ok {
+	if !graphql.IsSanitized(err) {
 		t.Errorf("safe not safe")
+	}
+	if got := graphql.SanitizeError(err); got != "safe safe" {
+		t.Errorf("sanitized message should survive the path decoration, got %q", got)
 	}
 
 }

@@ -181,7 +181,7 @@
     "Name": "batchExecutor:Pagination, with ctx and error",
     "Values": [
       {
-        "Error": "this is an error"
+        "Error": "inner.innerConnectionWithError: this is an error"
       }
     ]
   },
@@ -189,7 +189,7 @@
     "Name": "batchExecutor:Pagination, with error",
     "Values": [
       {
-        "Error": "this is an error"
+        "Error": "inner.innerConnectionWithError: this is an error"
       }
     ]
   },
@@ -197,7 +197,7 @@
     "Name": "batchExecutor:Pagination, with error",
     "Values": [
       {
-        "Error": "first/last cannot be a negative integer"
+        "Error": "inner.innerConnection: first/last cannot be a negative integer"
       }
     ]
   },
