@@ -2,6 +2,7 @@ package graphql_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/hiett/lightning/graphql"
@@ -150,4 +151,48 @@ func TestConnectionEmptyPageHasNullCursors(t *testing.T) {
 	require.Nil(t, pageInfo["endCursor"])
 	require.Equal(t, false, pageInfo["hasNextPage"])
 	require.Empty(t, widgets["edges"])
+}
+
+// TestConnectionTypesAreSharedAcrossFields checks that two paginated fields over
+// the same node type produce one connection type, not two objects that happen
+// to share a name. A schema cannot hold two types with one name, and whichever
+// the printer reached first would otherwise win — silently, and not necessarily
+// the same one twice.
+func TestConnectionTypesAreSharedAcrossFields(t *testing.T) {
+	schema := schemabuilder.NewSchema()
+	widget := schema.Object("Widget", Widget{})
+	widget.Key("key")
+
+	query := schema.Query()
+	query.FieldFunc("widgets", func(ctx context.Context) []*Widget { return nil }, schemabuilder.Paginated)
+	query.FieldFunc("otherWidgets", func(ctx context.Context) []*Widget { return nil }, schemabuilder.Paginated)
+	// A value slice, which used to generate a second "NonNullWidgetConnection".
+	query.FieldFunc("valueWidgets", func(ctx context.Context) []Widget { return nil }, schemabuilder.Paginated)
+
+	built := schema.MustBuild()
+
+	queryObject := built.Query.(*graphql.Object)
+	unwrap := func(fieldName string) graphql.Type {
+		t.Helper()
+		field := queryObject.Fields[fieldName]
+		require.NotNil(t, field, "no field %s", fieldName)
+		typ := field.Type
+		if nonNull, ok := typ.(*graphql.NonNull); ok {
+			typ = nonNull.Type
+		}
+		return typ
+	}
+
+	first := unwrap("widgets")
+	require.Same(t, first, unwrap("otherWidgets"), "two fields over the same node type must share one connection type")
+	require.Same(t, first, unwrap("valueWidgets"), "a value slice and a pointer slice describe the same connection")
+
+	// And the schema still prints and loads.
+	sdl, err := graphql.PrintSchema(built)
+	require.NoError(t, err)
+	require.Equal(t, 1, strings.Count(sdl, "type WidgetConnection"), "printed schema:\n%s", sdl)
+	require.Equal(t, 1, strings.Count(sdl, "type WidgetEdge"), "printed schema:\n%s", sdl)
+
+	_, err = graphql.ASTSchema(built)
+	require.NoError(t, err)
 }

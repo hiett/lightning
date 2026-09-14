@@ -24,6 +24,7 @@ import (
 	"github.com/hiett/lightning/example/schema"
 	"github.com/hiett/lightning/graphql"
 	"github.com/hiett/lightning/graphql/graphiql"
+	"github.com/hiett/lightning/graphql/introspection"
 	"github.com/hiett/lightning/invalidation"
 )
 
@@ -46,6 +47,12 @@ func main() {
 
 	store := schema.NewStore(invalidator)
 	built := schema.Build(store)
+
+	// Introspection is opt-in: it is what GraphiQL and any schema-aware client
+	// read, and adding it is the caller's decision because a public endpoint
+	// may not want to publish its schema. It must happen before any handler is
+	// built, because it replaces the schema's query root.
+	introspection.AddIntrospectionToSchema(built)
 
 	mux := http.NewServeMux()
 	mux.Handle("/graphql", withCORS(graphql.HTTPHandler(built)))

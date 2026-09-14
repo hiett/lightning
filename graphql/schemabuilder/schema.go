@@ -368,12 +368,13 @@ func (s *Schema) Build() (*graphql.Schema, error) {
 	}
 
 	sb := &schemaBuilder{
-		types:        make(map[reflect.Type]graphql.Type),
-		typeNames:    make(map[string]reflect.Type),
-		objects:      make(map[reflect.Type]*Object),
-		interfaces:   s.interfaces,
-		enumMappings: s.enumTypes,
-		typeCache:    make(map[reflect.Type]cachedType, 0),
+		types:          make(map[reflect.Type]graphql.Type),
+		typeNames:      make(map[string]reflect.Type),
+		objects:        make(map[reflect.Type]*Object),
+		interfaces:     s.interfaces,
+		enumMappings:   s.enumTypes,
+		typeCache:      make(map[reflect.Type]cachedType, 0),
+		generatedTypes: make(map[string]*graphql.Object),
 	}
 
 	s.Object("Query", query{})

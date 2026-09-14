@@ -124,7 +124,11 @@ func registerMutation(builder *schemabuilder.Schema, store *Store) {
 		Title   string
 		OwnerId schemabuilder.ID
 	}) (*Task, error) {
-		return store.AddTask(ctx, args.Title, localID(args.OwnerId))
+		owner, err := localID(args.OwnerId)
+		if err != nil {
+			return nil, err
+		}
+		return store.AddTask(ctx, args.Title, owner)
 	}, schemabuilder.Description("Adds a task."),
 		schemabuilder.ArgDescription("title", "What needs doing."),
 		schemabuilder.ArgDescription("ownerId", "The global id of the user or team it belongs to."))
@@ -133,7 +137,11 @@ func registerMutation(builder *schemabuilder.Schema, store *Store) {
 		Id   schemabuilder.ID
 		Done bool
 	}) (*Task, error) {
-		return store.SetTaskDone(ctx, localID(args.Id), args.Done)
+		id, err := localID(args.Id)
+		if err != nil {
+			return nil, err
+		}
+		return store.SetTaskDone(ctx, id, args.Done)
 	}, schemabuilder.Description("Marks a task done, or not done."),
 		schemabuilder.ArgDescription("id", "The task's global id."),
 		schemabuilder.ArgDescription("done", "The new state."))
@@ -155,12 +163,16 @@ func registerSubscription(builder *schemabuilder.Schema, store *Store) {
 //
 // A mutation takes global ids because that is what a Relay client has to hand;
 // the store speaks local ones.
-func localID(id schemabuilder.ID) string {
+//
+// Decoding is strict. Falling back to treating an undecodable value as a local
+// id would be friendlier in GraphiQL, but a type-local id can itself be valid
+// base64 — "task1006" decodes to bytes containing a colon — so the fallback
+// would mis-read exactly the ids it was meant to help with. Get an id from a
+// query instead.
+func localID(id schemabuilder.ID) (string, error) {
 	_, local, err := (schemabuilder.Base64GlobalIDCodec{}).Decode(id.Value)
 	if err != nil {
-		// Not a global id: treat it as a local one, so the example is usable
-		// from GraphiQL without encoding ids by hand.
-		return id.Value
+		return "", graphql.NewClientError("%q is not a global id; use the id a query returned", id.Value)
 	}
-	return local
+	return local, nil
 }

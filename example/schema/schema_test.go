@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/hiett/lightning/example/schema"
 	"github.com/hiett/lightning/graphql"
+	"github.com/hiett/lightning/graphql/introspection"
 	"github.com/hiett/lightning/invalidation"
 	"github.com/stretchr/testify/require"
 )
@@ -253,4 +254,40 @@ func TestExampleLiveQuery(t *testing.T) {
 
 	third := titles(read())
 	require.Equal(t, true, third["Feed the cat"], "the live query should have been pushed the change")
+}
+
+// TestExampleIntrospectionWorks checks that the endpoint GraphiQL is pointed at
+// can actually answer an introspection query, which requires the server to have
+// registered the introspection schema.
+func TestExampleIntrospectionWorks(t *testing.T) {
+	_, built := newExample(t)
+	introspection.AddIntrospectionToSchema(built)
+
+	data := post(t, built, `{ __schema { queryType { name } subscriptionType { name } } }`, nil)
+
+	schemaField := data["__schema"].(map[string]interface{})
+	require.Equal(t, "Query", schemaField["queryType"].(map[string]interface{})["name"])
+	require.Equal(t, "Subscription", schemaField["subscriptionType"].(map[string]interface{})["name"])
+
+	// And __typename at the root, which Relay asks for.
+	data = post(t, built, `{ __typename }`, nil)
+	require.Equal(t, "Query", data["__typename"])
+}
+
+// TestExampleRejectsANonGlobalID checks that a mutation given something that is
+// not a global id says so, rather than guessing.
+func TestExampleRejectsANonGlobalID(t *testing.T) {
+	_, built := newExample(t)
+
+	body, err := json.Marshal(map[string]interface{}{
+		"query":     `mutation Done($id: ID!) { setTaskDone(id: $id, done: true) { id } }`,
+		"variables": map[string]interface{}{"id": "task1"},
+	})
+	require.NoError(t, err)
+
+	request := httptest.NewRequest("POST", "/graphql", strings.NewReader(string(body)))
+	recorder := httptest.NewRecorder()
+	graphql.HTTPHandler(built).ServeHTTP(recorder, request)
+
+	require.Contains(t, recorder.Body.String(), "is not a global id")
 }

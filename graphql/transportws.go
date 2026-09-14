@@ -57,6 +57,12 @@ const (
 // connection_init before the connection is closed.
 const DefaultConnectionInitTimeout = 10 * time.Second
 
+// DefaultWriteTimeout bounds a single write. Without one, a client that stops
+// reading fills the kernel buffer and pins the writing goroutine for ever,
+// which for a live query means one stalled browser tab holding a server
+// goroutine and everything behind the write lock.
+const DefaultWriteTimeout = 10 * time.Second
+
 // transportWSMessage is one message in either direction. Payload is left raw so
 // that it can be decoded according to the message type.
 type transportWSMessage struct {
@@ -103,6 +109,12 @@ func WithTransportWSConnectionInitTimeout(d time.Duration) TransportWSOption {
 	return func(h *transportWSHandler) { h.connectionInitTimeout = d }
 }
 
+// WithTransportWSWriteTimeout bounds how long a single write may take before
+// the connection is considered dead.
+func WithTransportWSWriteTimeout(d time.Duration) TransportWSOption {
+	return func(h *transportWSHandler) { h.writeTimeout = d }
+}
+
 // WithTransportWSMinRerunInterval sets the minimum interval between
 // re-executions of a live subscription, which debounces a rapidly changing
 // dependency.
@@ -128,6 +140,7 @@ func TransportWSHandler(schema *Schema, options ...TransportWSOption) http.Handl
 		executor:              NewExecutor(NewImmediateGoroutineScheduler()),
 		connectionInitTimeout: DefaultConnectionInitTimeout,
 		minRerunInterval:      DefaultMinRerunInterval,
+		writeTimeout:          DefaultWriteTimeout,
 		upgrader: websocket.Upgrader{
 			Subprotocols: []string{TransportWSSubprotocol},
 		},
@@ -152,6 +165,7 @@ type transportWSHandler struct {
 	onConnectionInit      func(context.Context, json.RawMessage) (context.Context, error)
 	connectionInitTimeout time.Duration
 	minRerunInterval      time.Duration
+	writeTimeout          time.Duration
 }
 
 func (h *transportWSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +202,10 @@ type transportWSConn struct {
 	initialised bool
 	closed      bool
 
+	// initTimer closes a connection that never initialises; it is stopped as
+	// soon as one does.
+	initTimer *time.Timer
+
 	// ctx is the context every operation on this connection runs under. It
 	// starts as the request's context and is replaced by whatever
 	// WithTransportWSConnectionInit returns, which is how a connection's
@@ -222,6 +240,10 @@ func (c *transportWSConn) serve(parent context.Context) {
 		}
 	})
 	defer initTimer.Stop()
+
+	c.mu.Lock()
+	c.initTimer = initTimer
+	c.mu.Unlock()
 
 	for {
 		var message transportWSMessage
@@ -273,6 +295,9 @@ func (c *transportWSConn) handleConnectionInit(ctx context.Context, message *tra
 		return c.closeWith(closeTooManyInitRequests, "Too many initialisation requests")
 	}
 	c.initialised = true
+	if c.initTimer != nil {
+		c.initTimer.Stop()
+	}
 	c.mu.Unlock()
 
 	if c.handler.onConnectionInit != nil {
@@ -346,7 +371,13 @@ func (c *transportWSConn) handleSubscribe(ctx context.Context, message *transpor
 	c.streams[message.ID] = cancel
 	c.mu.Unlock()
 
-	go c.runStream(streamCtx, message.ID, query, root, payload)
+	go func() {
+		// Always cancel, even for an operation that finished on its own: the
+		// context is derived from the connection's, which outlives it, and an
+		// uncancelled child stays attached to its parent.
+		defer cancel()
+		c.runStream(streamCtx, message.ID, query, root, payload)
+	}()
 	return nil
 }
 
@@ -476,6 +507,13 @@ func (c *transportWSConn) write(message transportWSMessage) {
 	c.mu.Unlock()
 	if closed {
 		return
+	}
+
+	if c.handler.writeTimeout > 0 {
+		if err := c.socket.SetWriteDeadline(time.Now().Add(c.handler.writeTimeout)); err != nil {
+			c.socket.Close()
+			return
+		}
 	}
 
 	if err := c.socket.WriteJSON(message); err != nil {

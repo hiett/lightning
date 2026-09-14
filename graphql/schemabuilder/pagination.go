@@ -221,6 +221,30 @@ func nonNull(typ graphql.Type) graphql.Type {
 	return &graphql.NonNull{Type: typ}
 }
 
+// generatedObject returns the generated type of the given name, building it
+// with build the first time it is asked for.
+//
+// Two paginated fields over the same node type describe the same Connection,
+// and a schema may not hold two different types with one name. Without this
+// they would be two distinct *graphql.Object values that happen to agree, and
+// whichever the schema printer reached first would win — silently, and not
+// necessarily the same one twice.
+func (sb *schemaBuilder) generatedObject(name string, build func() (*graphql.Object, error)) (*graphql.Object, error) {
+	if existing, ok := sb.generatedTypes[name]; ok {
+		return existing, nil
+	}
+	if existing, ok := sb.typeNames[name]; ok {
+		return nil, fmt.Errorf("generated type %s collides with %s; rename the type it is generated from", name, existing)
+	}
+
+	built, err := build()
+	if err != nil {
+		return nil, err
+	}
+	sb.generatedTypes[name] = built
+	return built, nil
+}
+
 type connectionContext struct {
 	*funcContext
 	// The string value for the key field name.
@@ -314,14 +338,18 @@ func (sb *schemaBuilder) constructEdgeType(typ reflect.Type) (graphql.Type, erro
 		return nil, err
 	}
 
-	return &graphql.NonNull{
-		Type: &graphql.Object{
+	edge, err := sb.generatedObject(name+"Edge", func() (*graphql.Object, error) {
+		return &graphql.Object{
 			Name:        fmt.Sprintf("%sEdge", name),
 			Description: fmt.Sprintf("An edge in a %s connection.", name),
 			Fields:      fieldMap,
-		},
-	}, nil
+		}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
 
+	return &graphql.NonNull{Type: edge}, nil
 }
 
 // constructConnectionType wraps typ (type of the Node) in a Connection Type conforming to the Relay spec.
@@ -372,14 +400,18 @@ func (c *connectionContext) constructConnectionType(sb *schemaBuilder, typ refle
 		return nil, err
 	}
 
-	retObject := &graphql.NonNull{
-		Type: &graphql.Object{
+	connection, err := sb.generatedObject(name+"Connection", func() (*graphql.Object, error) {
+		return &graphql.Object{
 			Name:        fmt.Sprintf("%sConnection", name),
 			Description: fmt.Sprintf("A paginated list of %s, following the Relay Cursor Connections specification.", name),
 			Fields:      fieldMap,
-		},
+		}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return retObject, nil
+
+	return &graphql.NonNull{Type: connection}, nil
 }
 
 func safeInt32Ptr(i *int32) int32 {

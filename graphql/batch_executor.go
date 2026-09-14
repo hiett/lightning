@@ -138,6 +138,17 @@ func (e *Executor) Execute(ctx context.Context, typ Type, source interface{}, qu
 		if !ok {
 			continue
 		}
+
+		// __typename is legal on the root operation type as it is anywhere
+		// else, and is answered here rather than by a resolver because the root
+		// type has no field of that name.
+		if selection.Name == "__typename" {
+			writer := newOutputNode(topLevelRespWriter, selection.Alias)
+			writer.Fill(queryObject.Name)
+			writers[selection.Alias] = writer
+			continue
+		}
+
 		field, ok := queryObject.Fields[selection.Name]
 		if !ok {
 			return nil, fmt.Errorf("invalid top-level selection %q", selection.Name)
@@ -509,16 +520,18 @@ func resolveObjectBatch(ctx context.Context, sources []interface{}, typ *Object,
 
 	// for every selection, resolve the value or schedule an work unit for the field
 	for _, selection := range selections {
+		// The directive check comes first: @skip and @include apply to
+		// __typename as they do to any other field.
+		if ok, err := ShouldIncludeNode(selection.Directives); err != nil {
+			return nil, nestPathError(selection.Alias, err)
+		} else if !ok {
+			continue
+		}
+
 		if selection.Name == "__typename" {
 			for idx := range nonNilDestinations {
 				nonNilDestinations[idx][selection.Alias] = typ.Name
 			}
-			continue
-		}
-
-		if ok, err := ShouldIncludeNode(selection.Directives); err != nil {
-			return nil, nestPathError(selection.Alias, err)
-		} else if !ok {
 			continue
 		}
 

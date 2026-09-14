@@ -22,6 +22,12 @@ type schemaBuilder struct {
 	// one type registered as a node.
 	nodeInterface  *graphql.Interface
 	nodeRootFields map[string]*graphql.Field
+
+	// generatedTypes holds the Connection and Edge types built for paginated
+	// fields, keyed by their GraphQL name, so that two paginated fields over
+	// the same node type share one type rather than producing two distinct
+	// objects with the same name.
+	generatedTypes map[string]*graphql.Object
 	typeCache      map[reflect.Type]cachedType // typeCache maps Go types to GraphQL datatypes
 }
 
