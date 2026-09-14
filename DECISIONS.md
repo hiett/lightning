@@ -86,10 +86,16 @@ strings the test suite asserts. Four behaviours deliberately changed:
    *"only support a single query"*, which stopped being true. Relay always sends `operationName`.
 
 2. **A non-null variable may declare a default value.** Thunder rejected
-   `query Op($x: Int! = 2)` with *"required variable cannot provide a default value"*. This is
-   legal GraphQL, and relay-compiler emits it whenever `@argumentDefinitions` gives a non-null
-   argument a default — `$count: Int! = 10` is the ordinary shape of a paginated Relay query. The
-   restriction would have blocked Phase 10, so it is gone.
+   `query Op($x: Int! = 2)` with *"required variable cannot provide a default value"*. The
+   specification permits it — §5.8.5 constrains a default value's *type*, not the nullability of
+   the variable it belongs to — and gqlparser's validator accepts it, so a server that rejects it
+   is refusing a legal document.
+
+   A correction to what this entry first claimed: relay-compiler does **not** emit non-null
+   variables with defaults from `@argumentDefinitions`. It rejects them itself, with
+   *"Non-nullable variable 'count' has a default value"*, which Phase 10 found the moment the
+   example app was compiled. So this change was not required by Relay. It stands because it is
+   correct, not because anything downstream needed it.
 
 3. **An explicitly-null variable keeps its null.** Thunder replaced any null-valued variable with
    the operation's declared default. The specification's `CoerceVariableValues` only applies a

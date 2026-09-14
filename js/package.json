@@ -1,0 +1,45 @@
+{
+  "name": "@hiett/lightning-relay",
+  "version": "0.1.0",
+  "description": "Relay network layer for lightning's reactive live-query websocket protocol.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "graphql": "^16",
+    "relay-runtime": "^18"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5",
+    "vitest": "^2"
+  },
+  "keywords": [
+    "graphql",
+    "relay",
+    "websocket",
+    "live-query",
+    "subscriptions",
+    "lightning"
+  ]
+}
