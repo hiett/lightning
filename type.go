@@ -96,8 +96,17 @@ func (t *Type[T]) Name(name string) *Type[T] {
 //
 // A field can also be hidden where it is declared, with `graphql:"-"`, which is
 // usually better: the reader of the struct can see that it is not exposed.
+// A name that is not a field of the struct is reported: hiding something that
+// was never there hides nothing, and says so nowhere.
 func (t *Type[T]) Hide(goFieldNames ...string) *Type[T] {
+	goType := t.decl.goType
 	for _, name := range goFieldNames {
+		if goType != nil && goType.Kind() == reflect.Struct {
+			if _, ok := goType.FieldByName(name); !ok {
+				t.b.errorf("%s has no field named %s to hide", t.decl.name, name)
+				continue
+			}
+		}
 		t.decl.hidden[name] = true
 	}
 	return t

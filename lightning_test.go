@@ -3,6 +3,8 @@ package lightning_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -355,4 +357,110 @@ func TestEmbeddedFieldsArePromoted(t *testing.T) {
 		"revision":  float64(7),
 		"note":      "the note",
 	}, got["recorded"])
+}
+
+// Money is a Go type with a wire form of its own.
+type Money struct {
+	Pence int64
+}
+
+// Priced holds one, to prove a custom scalar works as a struct field as well
+// as an argument.
+type Priced struct {
+	lightning.Meta `graphql:"Priced"`
+
+	Cost  Money
+	Spare *Money
+}
+
+type priceArgs struct {
+	Cost Money
+}
+
+// TestCustomScalar covers a Go type registered as a scalar of its own: it
+// travels as the registered name, encodes and decodes through the given
+// functions, and a bad value is reported in the client's terms.
+func TestCustomScalar(t *testing.T) {
+	b := lightning.New()
+	lightning.Scalar[Money](b, "Money",
+		func(m Money) (any, error) { return fmt.Sprintf("£%d.%02d", m.Pence/100, m.Pence%100), nil },
+		func(value any) (Money, error) {
+			text, ok := value.(string)
+			if !ok {
+				return Money{}, graphql.NewClientError("a Money is written as a string of pence")
+			}
+			pence, err := strconv.ParseInt(text, 10, 64)
+			if err != nil {
+				return Money{}, graphql.NewClientError("%q is not a whole number of pence", text)
+			}
+			return Money{Pence: pence}, nil
+		})
+
+	lightning.Object[Priced](b)
+	query := b.Query()
+	query.Field("priced", func(ctx context.Context, _ *lightning.Root) (*Priced, error) {
+		return &Priced{Cost: Money{Pence: 1250}}, nil
+	})
+	query.FieldArgs("echo", func(ctx context.Context, _ *lightning.Root, args priceArgs) (Money, error) {
+		return args.Cost, nil
+	})
+
+	schema := b.MustBuild()
+
+	sdl := printSchema(t, schema)
+	require.Contains(t, sdl, "scalar Money")
+	require.Contains(t, sdl, "cost: Money!")
+	require.Contains(t, sdl, "spare: Money\n")
+
+	got := run(t, schema, `{ priced { cost spare } echo(cost: "99") }`)
+	require.Equal(t, map[string]any{"cost": "£12.50", "spare": nil}, got["priced"])
+	require.Equal(t, "£0.99", got["echo"])
+
+	// A value the decoder refuses is reported to the client, in its own words.
+	q, err := graphql.Parse(`{ echo(cost: "ninety-nine") }`, nil)
+	require.NoError(t, err)
+	err = graphql.PrepareQuery(context.Background(), schema.Query, q.SelectionSet)
+	require.Error(t, err)
+	require.Contains(t, graphql.SanitizeError(err), `"ninety-nine" is not a whole number of pence`)
+}
+
+// TestScalarCannotAlsoBeAType keeps a Go type from being two things.
+func TestScalarCannotAlsoBeAType(t *testing.T) {
+	b := lightning.New()
+	lightning.Object[Priced](b)
+	lightning.Scalar[Priced](b, "Priced",
+		func(Priced) (any, error) { return nil, nil },
+		func(any) (Priced, error) { return Priced{}, nil })
+	b.Query().Field("priced", func(ctx context.Context, _ *lightning.Root) (*Priced, error) { return nil, nil })
+
+	_, err := b.Build()
+	require.ErrorContains(t, err, "is declared as a type and cannot also be a scalar")
+}
+
+// TestHideRemovesStructFields covers the second way to keep a field out of the
+// schema, for a type whose tags are not yours to change.
+func TestHideRemovesStructFields(t *testing.T) {
+	b := lightning.New()
+	lightning.Object[Task](b).Hide("Done", "Notes")
+	b.Query().Field("task", func(ctx context.Context, _ *lightning.Root) (*Task, error) {
+		return &Task{Title: "One", Done: true}, nil
+	})
+
+	schema := b.MustBuild()
+
+	sdl := printSchema(t, schema)
+	require.Contains(t, sdl, "title: String!")
+	require.NotContains(t, sdl, "done:")
+	require.NotContains(t, sdl, "notes:")
+}
+
+// TestHidingAFieldThatIsNotThereIsReported keeps a typo from quietly hiding
+// nothing.
+func TestHidingAFieldThatIsNotThereIsReported(t *testing.T) {
+	b := lightning.New()
+	lightning.Object[Task](b).Hide("done")
+	b.Query().Field("task", func(ctx context.Context, _ *lightning.Root) (*Task, error) { return nil, nil })
+
+	_, err := b.Build()
+	require.ErrorContains(t, err, "Task has no field named done to hide")
 }
