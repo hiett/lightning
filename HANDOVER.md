@@ -1,17 +1,24 @@
 # Handover
 
-`PLAN.md`'s ten phases are done. This is what changed, what is verified, and
+Two refactors are done. The first brought thunder up to the modern GraphQL
+specification; the second replaced the schema-authoring layer with a
+generics-based API. This is what the repository is now, what is verified, and
 what is left for a human to decide.
 
 ---
 
 ## 1. What the repository is now
 
-A Go GraphQL server library, module `github.com/hiett/lightning`, with:
+A Go GraphQL server library, module `github.com/hiett/lightning`, requiring
+**Go 1.27**, with:
 
-- a spec-compliant parser and **full query validation** before execution;
-- the specification's scalars, interfaces, and Relay's `Node` interface;
-- Relay-conformant connections, verified by running relay-compiler for real;
+- a schema-authoring API where a resolver of the wrong shape is a **compile**
+  error, not a build-time one;
+- a spec-compliant parser and full query validation before execution;
+- the specification's scalars, interfaces and unions, both backed by Go
+  interfaces;
+- Relay as a **plugin** — `Node`, global identifiers, connections, sorting and
+  searching — with no privileged access to the core;
 - SDL export, so a client's tooling reads a generated `schema.graphql`;
 - subscriptions over `graphql-transport-ws`, **and** thunder's diff-pushing
   live-query protocol with a TypeScript Relay network layer for it;
@@ -24,9 +31,10 @@ Six direct dependencies, all current. No database. No `replace` directives.
 
 | | |
 |---|---|
-| `graphql/` | the server: parser, validator, executor, SDL printer, HTTP and websocket handlers |
-| `graphql/schemabuilder/` | reflection-based schema construction |
-| `graphql/introspection/` | the introspection schema |
+| `.` (`lightning`) | the schema-authoring API: builder, types, fields, arguments, enums, scalars, the plugin seam |
+| `relay/` | the Relay plugin: `Node`, global identifiers, connections, sorting, searching |
+| `graphql/` | the runtime: parser, validator, executor, SDL printer, HTTP and websocket handlers |
+| `graphql/introspection/` | the introspection schema, itself built with the authoring API |
 | `graphql/graphiql/` | the GraphiQL IDE, embedded |
 | `reactive/` | dependency tracking and re-execution — the live-query core |
 | `invalidation/` | change events → reactive invalidations |
@@ -37,10 +45,18 @@ Six direct dependencies, all current. No database. No `replace` directives.
 
 ### Deleted
 
-`livesql/`, `sqlgen/`, `federation/`, `federationexample/`, `thunderpb/`,
-`client/`, `doc/`, `tools/`, `ci/`, `internal/integrationtest/`,
-`internal/proto/`, `internal/testfixtures/`, `internal/fields/`. All recoverable
-from git history; nothing in the current tree refers to them.
+By the first refactor: `livesql/`, `sqlgen/`, `federation/`,
+`federationexample/`, `thunderpb/`, `client/`, `doc/`, `tools/`, `ci/`,
+`internal/integrationtest/`, `internal/proto/`, `internal/testfixtures/`,
+`internal/fields/`.
+
+By the second: **`graphql/schemabuilder/`** and the dead federation surface it
+carried — `FetchObjectFromKeys`, `RootObjectType`, `ShadowObjectType`,
+`ServiceName`, `NewSchemaWithName`, `buildFederatedFunction`,
+`buildShadowObjectFederationFunction`, `graphql.Field.FederatedKey` — plus
+`internal/filter`, whose behaviour now lives in `relay`.
+
+All recoverable from git history; nothing in the current tree refers to them.
 
 ---
 
@@ -49,58 +65,41 @@ from git history; nothing in the current tree refers to them.
 Every one of these was run, not reasoned about.
 
 ```
-go build ./...     clean
-go vet ./...       silent
-gofmt -l .         empty
-go test ./...      all packages pass
+go build ./...       clean
+go vet ./...         silent
+gofmt -l .           empty
+go test ./...        all packages pass
 go test -race ./...  all packages pass
 ```
 
 No test requires a database, or any other external process.
 
-The plan's acceptance criteria are checked mechanically by
-`graphql/acceptance_test.go`, so a regression in any of them fails the build:
-the five built-in scalars in introspection, `INTERFACE` kind with real
-`interfaces` and `possibleTypes`, SDL that re-parses and matches introspection,
-`hasPreviousPage` present and `hasPrevPage` gone, no generated type name
-carrying a wrapper prefix, a global id round-tripping through `node`, and errors
-serialising with `message` and `path`.
+**The example's exported schema is essentially unchanged.** `DECISIONS.md` D42
+lists every line that differs from the pre-refactor `schema.graphql` and why:
+added descriptions, one dropped argument that did nothing, one removed field
+that no longer has to exist, and an added enum. No other type, field, argument
+or nullability change.
 
 **relay-compiler runs clean.** `example/web/` contains a real Relay app —
 `usePaginationFragment` over the generated connection, `@refetchable` on a
-fragment (which requires `Node` and the `node` field), `@appendNode` into the
-connection after a mutation, and a subscription — and `npx relay-compiler`
-compiles all nine documents against `example/schema.graphql` with zero errors.
-That file is generated by `go run ./cmd/schema`.
+fragment, `@appendNode` into the connection after a mutation, a subscription —
+and `npx relay-compiler` compiles all nine documents against
+`example/schema.graphql` with zero errors.
 
 **The Relay app was run, not described.** `example/web/e2e/app.test.tsx` mounts
 the real components in jsdom against a running example server, over the
-live-query websocket, with nothing mocked. All four acceptance behaviours pass:
-
-- the list renders and `usePaginationFragment` loads a second page;
-- the `Actor` interface resolves to its concrete types — a `User` owner shows an
-  email, a `Team` owner a member count;
-- `@refetchable` fetches a node back by its global id;
-- a mutation commits, `@appendNode` splices the result into the connection with
-  no refetch, and a checkbox toggle is reflected in the store *and* on the
-  server;
-- a live query is pushed a change made over a **different** connection — nothing
-  in the test touches the websocket to provoke it.
+live-query websocket, with nothing mocked. All four acceptance behaviours pass,
+including a live query pushed a change made over a *different* connection.
 
 ```
 cd example && go run ./cmd/server      # terminal one
 cd example/web && npm run e2e          # terminal two
 ```
 
-**Live queries are proven in Go too.**
-`example/schema/schema_test.go:TestExampleLiveQuery` does the same over
-`graphql-transport-ws`, for an insert and an update. Nothing in that test
-touches the socket either; the store announces an invalidation and the query
-re-runs because it depended on it.
+**Live queries are proven in Go too**, over `graphql-transport-ws`, by
+`example/schema/schema_test.go:TestExampleLiveQuery`.
 
-`js/` typechecks under `strict` and its **154 tests** pass, covering the merge
-algorithm against diffs generated by the real Go differ, the websocket
-connection, the protocol parser and the network layer.
+`js/` typechecks under `strict` and its **154 tests** pass.
 
 **CI enforces the chain.** It regenerates `schema.graphql` from the Go schema
 and re-runs relay-compiler, failing if either the exported schema or the
@@ -111,92 +110,126 @@ pass.
 
 ---
 
-## 3. Decisions a human should look at
+## 3. What the authoring API looks like
 
-`DECISIONS.md` has all twenty-three in full. These are the ones with consequences:
+The whole of it, in the order you meet it:
 
-**`Int64` is a string on the wire** (D11). Go's `int` maps to `Int64`, so an
-`Age int` field serialises as `"5"`, not `5`. The alternative was truncating at
-2³¹ or corrupting values above 2⁵³ in JavaScript. A field that genuinely is a
-small number should be declared `int32`, which maps to `Int` and stays a number.
-This is the change most likely to surprise someone writing their first schema.
+```go
+type Task struct {
+    lightning.Meta `graphql:"Task" description:"A unit of work."`
 
-**Fragment type conditions are now enforced** (D13). Thunder ignored
-`... on Foo` entirely and merged every fragment into every selection. Any query
-that relied on that — knowingly or not — behaves differently now, and the
-validator rejects the ones that were never legal.
+    Key   string `graphql:"-"`
+    Title string `description:"What needs doing." sortable:"true" filterable:"true"`
+    Done  bool   `description:"Whether it has been done."`
+}
 
-**Interfaces are declared with a marker struct** (D13), mirroring
-`schemabuilder.Union`. The interface's field set defaults to what all its
-implementing types agree on; `Fields(...)` pins it explicitly. Whether the
-default should exist at all is a taste call worth revisiting after some use.
+func (t *Task) NodeID() string { return t.Key }
 
-**Global identifiers are base64, and guessable** (D17). That is the Relay
-convention and it is obfuscation, not security. If identifiers must not be
-forgeable, supply a signing `GlobalIDCodec` — the interface exists for exactly
-this, and both its methods return errors.
+b := lightning.New(relay.Plugin())
 
-**No Postgres invalidation source is shipped** (§Phase 10 of `PLAN.md` suggested
-one). Adding a database driver to a GraphQL library's `go.mod` is the over-reach
-Phase 1 deleted, so `invalidation` ships `MemorySource` and documents the
-`Source` interface a Postgres `LISTEN`/`NOTIFY` implementation would fill. That
-implementation belongs in the consuming project, or in a separate module.
+task := lightning.Object[Task](b)
+relay.Node(b, store.Task)
 
-**Two websocket protocols are served, not one.** `graphql-transport-ws` is the
-interoperable path and sends full payloads; lightning's own protocol sends
-diffs and is the reason for the fork. Keeping both is a real maintenance cost,
-and if the diff protocol earns its keep the standard one could eventually be
-dropped — but only once something other than the example app depends on it.
+task.Field("owner", store.Owner).Describe("Whoever the task belongs to.")
 
-**`PLAN.md`'s Trap 1 was wrong** (D7). There is only one executor; the non-batch
-one was deleted upstream in 2019. Nothing had to be done twice.
+relay.Connection(b.Query(), "tasks", store.PageTasks).Describe("Every task.")
 
-**Twenty-one bugs were found by an adversarial review after the phases were
-done** (D21), and fixed. Two were inherited from thunder and matter for anyone
-relying on the live-query core: `diff` corrupted every field that was new since
-the last execution, and a `reactive.Resource` was permanently poisoned once its
-last dependent went away, which sent the next subscriber into an endless rerun
-loop. Both had been there for years. If you are diffing against upstream
-thunder, those two are the changes to carry across first.
+return b.MustBuild()
+```
+
+What is absent is the point: no type argument at a call site, no nullability
+flag, no `ArgDescription`, no `Key("key")`, no marker struct, no `localID`
+helper, no second place for anything to disagree with the Go type.
+
+`README.md` covers each piece. `example/schema/` is 95 lines and exercises an
+interface, three node types, a connection, an enum, two mutations and a live
+query.
 
 ---
 
-## 4. Known gaps
+## 4. Decisions a human should look at
+
+`DECISIONS.md` has all forty-two in full. These are the ones with consequences.
+
+From the first refactor:
+
+**`Int64` is a string on the wire** (D11). Go's `int` maps to `Int64`, so an
+`Age int` field serialises as `"5"`, not `5`. A field that genuinely is a small
+number should be declared `int32`. This is still the change most likely to
+surprise someone writing their first schema.
+
+**Global identifiers are base64, and guessable** (D17). That is the Relay
+convention and it is obfuscation, not security. Supply a signing `relay.Codec`
+if identifiers must not be forgeable.
+
+**No Postgres invalidation source is shipped.** `invalidation` ships
+`MemorySource` and documents the two-method `Source` interface a
+`LISTEN`/`NOTIFY` implementation would fill.
+
+**Two websocket protocols are served, not one.** `graphql-transport-ws` is the
+interoperable path; lightning's own protocol sends diffs and is the reason for
+the fork. Keeping both is a real maintenance cost.
+
+From the second:
+
+**Go 1.27 is a hard floor** (D24). Generic methods are what let a field's type
+be inferred from its resolver. There is no fallback for an older toolchain.
+
+**Nullability is derived from the Go type and nowhere else** (D26). `*T` is
+nullable, `T` is not, and a Go interface value is nullable because it can be
+nil. `.NonNull()` exists but is documented as rarely right: when the Go type is
+wrong, changing the Go type says the same thing to every reader.
+
+**Interface and union membership is explicit** (D28). A witness function
+`func(u *User) Actor { return u }` proves membership at compile time. Satisfying
+a Go interface by accident is ordinary; joining a GraphQL interface by accident
+is not.
+
+**Sortable and filterable are per-field, and the arguments follow** (D35). A
+connection over a type with nothing sortable has no `sortBy` argument at all.
+`filterType`, custom filter functions and custom tokenizers were dropped; the
+matching behaviour is now fixed and documented.
+
+**Batching has no separate fallback implementation** (D34). A batch field's
+single-parent path is the same function called with one parent, so
+`.UseBatch(fn)` switches between them with nothing written twice.
+
+**`__key` is opt-in** (D33). It travels only where the live-query diff needs it,
+not on every HTTP response.
+
+---
+
+## 5. Known gaps
 
 - **The app has not been clicked through in a real browser.** It is driven in
   jsdom, which exercises React, the Relay store, the generated artifacts, the
-  network layer and the server — everything but a real rendering engine. The
-  Chrome extension was not available in the session that built this.
+  network layer and the server — everything but a real rendering engine.
 - **`npm run e2e` needs a running server**, so it is not part of `npm test` and
   CI does not run it. CI runs relay-compiler and the typechecks, which do not.
-- **`__Type.interfaces` and `possibleTypes` report `[]`, not `null`**, for kinds
-  that have neither (D14). The specification says null. `schemabuilder` cannot
-  express a nullable list return, and relay-compiler is fed SDL rather than
-  introspection, so it has not bitten. Fixing it means teaching `getType` about
-  `*[]T`.
-- **`__key` appears in HTTP responses.** It is the correlation token the diff
-  algorithm needs, and the executor emits it for any type with a key field
-  regardless of transport. Relay ignores unknown fields, and `js/` strips it,
-  so it is noise rather than a bug — but it is noise on every response.
-- **Unions still match members by Go field name**, not by GraphQL type name, so
-  a union member registered under a different name would not resolve. Interfaces
-  do this correctly (D13); unions were out of scope. One function to fix.
-- **A paginated type must expose its key field.** Cursors are built from a real
-  Go struct field by reflection, so the key cannot be hidden with
-  `graphql:"-"`. `example/` exposes `key` alongside the global `id` and
-  documents why.
+- **Sorting and filtering happen in memory.** A `relay.Connection` resolver
+  returns the whole list and the plugin narrows it. A list too large for that
+  should use `relay.ManualConnection`, which hands the resolver the sort and
+  filter arguments to push down; there is no automatic pushdown and there
+  cannot be one without knowing where the list comes from.
+- **A batch field's resolver is not wrapped by `FieldPlugin`.** A plugin that
+  replaces `Resolve` to add tracing or authorisation will not see the batched
+  path. Both are on the same `*graphql.Field`, so the fix is for the plugin to
+  wrap `BatchResolver` as well — but the seam does not yet make that obvious.
 - **Persisted queries are unsupported** by the diff protocol, which carries
   query text. `js/` reports this clearly rather than failing obscurely.
+- **`relay.ManualConnection` does not cap its own page size.** `WithMaxPageSize`
+  applies to the connections the plugin pages; a manual resolver returns what it
+  returns, by definition.
 
 ---
 
-## 5. If you are picking this up
+## 6. If you are picking this up
 
 Read `DECISIONS.md` first — it is the log of every judgement call, including the
 ones that turned out to be wrong and were corrected. Then `README.md` for the
-APIs, then `example/` for a working schema of every shape.
+API, then `example/` for a working schema of every shape.
 
-Every acceptance criterion in `PLAN.md` §5 was checked by running it, and
-`graphql/acceptance_test.go` re-checks most of them on every build. The most
-useful next piece of work is whichever of §4's known gaps your use hits first —
-they are in rough order of how likely that is.
+The tests are worth reading as documentation: the root package's
+`lightning_test.go`, `abstract_test.go`, `args_test.go` and
+`batchfield_test.go` each state a claim about the API in their test names, and
+`relay/` does the same for nodes, connections, sorting and conformance.
