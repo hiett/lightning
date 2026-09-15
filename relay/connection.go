@@ -48,6 +48,22 @@ type Page struct {
 	FilterTextFields []string
 }
 
+// check reports a page a client cannot have asked for in good faith.
+//
+// The Relay specification requires first and last to be non-negative, and a
+// negative one is a client mistake rather than a server one: slicing by it used
+// to panic out of the resolver and be reported as an internal error, which
+// tells the client nothing about what it did.
+func (p Page) check() error {
+	if p.First != nil && *p.First < 0 {
+		return graphql.NewClientError("first must not be negative, but it is %d", *p.First)
+	}
+	if p.Last != nil && *p.Last < 0 {
+		return graphql.NewClientError("last must not be negative, but it is %d", *p.Last)
+	}
+	return nil
+}
+
 // size is the page size the client asked for, or zero if it asked for none.
 func (p Page) size() int {
 	switch {
@@ -587,5 +603,8 @@ func splitArgs[A any](raw any) (Page, A, error) {
 	}
 
 	readSearch(value, &page)
+	if err := page.check(); err != nil {
+		return Page{}, extra, err
+	}
 	return page, extra, nil
 }

@@ -293,3 +293,26 @@ func TestConnectionArgumentNameClashIsReported(t *testing.T) {
 	_, err := b.Build()
 	require.ErrorContains(t, err, "the argument First is already a connection argument")
 }
+
+// TestNegativePageSizeIsAClientError checks the specification's requirement
+// that first and last be non-negative.
+//
+// Slicing by a negative one used to panic out of the resolver and be reported
+// as an internal error, which tells a client nothing about what it did.
+func TestNegativePageSizeIsAClientError(t *testing.T) {
+	built := widgetSchema(t, fiveWidgets()...)
+
+	_, err := runErr(t, built, `{ widgets(first: -1) { totalCount } }`)
+	require.Error(t, err)
+	require.Contains(t, graphql.SanitizeError(err), "first must not be negative, but it is -1")
+
+	_, err = runErr(t, built, `{ widgets(last: -3) { totalCount } }`)
+	require.Error(t, err)
+	require.Contains(t, graphql.SanitizeError(err), "last must not be negative, but it is -3")
+
+	// Zero is a legal page size, and an empty page is what it asks for.
+	conn := run(t, built, `{ widgets(first: 0) { totalCount edges { cursor } pageInfo { hasNextPage } } }`)["widgets"].(map[string]any)
+	require.Equal(t, "5", conn["totalCount"])
+	require.Empty(t, conn["edges"])
+	require.Equal(t, true, conn["pageInfo"].(map[string]any)["hasNextPage"])
+}

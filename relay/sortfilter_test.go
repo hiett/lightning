@@ -263,3 +263,19 @@ func TestFilterableFieldMustBeText(t *testing.T) {
 	_, err := runErr(t, b.MustBuild(), `{ notes(filterText: "x") { totalCount } }`)
 	require.ErrorContains(t, err, "only a string field can be filtered by text")
 }
+
+// TestFilterTextFieldsEmptyMatchesNothing pins the literal reading of an empty
+// list: it asks for a search of no fields, and no field matches.
+func TestFilterTextFieldsEmptyMatchesNothing(t *testing.T) {
+	got := run(t, plainNotes(t), `{ notes(filterText: "about", filterTextFields: []) { totalCount edges { node { title } } } }`)
+	conn := got["notes"].(map[string]any)
+	require.Equal(t, "0", conn["totalCount"])
+	require.Empty(t, conn["edges"])
+}
+
+// TestFilterTextEmptyMatchesEverything is the other end: no search is not a
+// search that fails.
+func TestFilterTextEmptyMatchesEverything(t *testing.T) {
+	got := run(t, plainNotes(t), `{ notes(filterText: "") { totalCount } }`)
+	require.Equal(t, "3", got["notes"].(map[string]any)["totalCount"])
+}
