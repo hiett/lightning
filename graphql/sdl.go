@@ -385,8 +385,8 @@ func (p *sdlPrinter) printRoots(b *strings.Builder, schema *Schema) (map[string]
 
 		// A root operation type with no fields is not a legal GraphQL object,
 		// and an operation the server cannot serve should not be advertised.
-		// schemabuilder always creates a Mutation object, even when nothing was
-		// registered on it.
+		// The schema builder always creates a Mutation object, even when
+		// nothing was declared on it.
 		if !p.hasFields(root.typ) {
 			continue
 		}
