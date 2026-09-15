@@ -71,6 +71,9 @@ func (b *Builder) buildArguments(goType reflect.Type, at string) (map[string]gra
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		if err := checkInputType(argType, fmt.Sprintf("%s(%s:)", at, docs.name), typeName(field.Type)); err != nil {
+			return nil, nil, nil, err
+		}
 
 		parse, err := b.argParser(field.Type, fmt.Sprintf("%s(%s:)", at, docs.name))
 		if err != nil {
@@ -187,6 +190,28 @@ func applyDefault(dest reflect.Value, field argField) error {
 		target.SetFloat(v)
 	default:
 		return fmt.Errorf("%s: a default cannot be expressed for %s", field.name, typeName(target.Type()))
+	}
+	return nil
+}
+
+// checkInputType reports an argument whose Go type resolves to something a
+// client cannot send.
+//
+// An output object reached through an argument is the case worth naming: the Go
+// type is already declared as an object, so it cannot also be an input, and a
+// schema that used it would be illegal in a way only a client would discover.
+func checkInputType(argType graphql.Type, at, goType string) error {
+	switch typ := argType.(type) {
+	case *graphql.NonNull:
+		return checkInputType(typ.Type, at, goType)
+	case *graphql.List:
+		return checkInputType(typ.Type, at, goType)
+	case *graphql.Object:
+		return fmt.Errorf("%s: %s is declared as an object type, so it cannot also be an argument; give the argument a struct of its own", at, goType)
+	case *graphql.Interface:
+		return fmt.Errorf("%s: %s is an interface, and an argument cannot be one", at, goType)
+	case *graphql.Union:
+		return fmt.Errorf("%s: %s is a union, and an argument cannot be one", at, goType)
 	}
 	return nil
 }

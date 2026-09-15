@@ -203,3 +203,28 @@ func TestIntArgumentIsBounded(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "32-bit signed integer")
 }
+
+// ArgObject is declared as an output object, which is what makes it unusable as
+// an argument.
+type ArgObject struct {
+	lightning.Meta `graphql:"ArgObject"`
+
+	Name string
+}
+
+// TestAnOutputObjectCannotBeAnArgument catches a schema that would be illegal
+// in a way only a client would discover.
+func TestAnOutputObjectCannotBeAnArgument(t *testing.T) {
+	type LookArgs struct {
+		Thing ArgObject
+	}
+
+	b := lightning.New()
+	lightning.Object[ArgObject](b)
+	b.Query().FieldArgs("look", func(ctx context.Context, _ *lightning.Root, args LookArgs) (string, error) {
+		return "", nil
+	})
+
+	_, err := b.Build()
+	require.ErrorContains(t, err, "is declared as an object type, so it cannot also be an argument")
+}

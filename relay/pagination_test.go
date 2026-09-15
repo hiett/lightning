@@ -272,3 +272,24 @@ func TestConnectionArgsReachTheResolver(t *testing.T) {
 	require.Equal(t, "2", conn["totalCount"], "two widgets start with t")
 	require.Equal(t, "two", conn["edges"].([]any)[0].(map[string]any)["node"].(map[string]any)["name"])
 }
+
+// TestConnectionArgumentNameClashIsReported catches a resolver argument whose
+// name is already one of the connection's own.
+//
+// The two share one argument struct, so a name used twice would be two
+// arguments of one name; before the check it was a panic out of reflect.
+func TestConnectionArgumentNameClashIsReported(t *testing.T) {
+	type ClashArgs struct {
+		First *int32
+	}
+
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Widget](b)
+	relay.Node(b, fetchWidget)
+	relay.ConnectionArgs(b.Query(), "widgets", func(ctx context.Context, _ *lightning.Root, p relay.Page, args ClashArgs) ([]*Widget, error) {
+		return nil, nil
+	})
+
+	_, err := b.Build()
+	require.ErrorContains(t, err, "the argument First is already a connection argument")
+}

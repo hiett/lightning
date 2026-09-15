@@ -183,7 +183,7 @@ func connection[P, T, A any](parent *lightning.Type[P], name string, resolve fun
 			return nil, err
 		}
 		spec = found
-		return mergedArgs[A](spec), nil
+		return mergedArgs[A](name, spec)
 	}, func(ctx context.Context, source, rawArgs any, _ *graphql.SelectionSet) (any, error) {
 		page, extra, err := splitArgs[A](rawArgs)
 		if err != nil {
@@ -522,7 +522,7 @@ func unwrapNonNull(t graphql.Type) graphql.Type {
 
 // mergedArgs returns the Go type holding the pagination arguments alongside the
 // resolver's own.
-func mergedArgs[A any](spec *sortFilter) reflect.Type {
+func mergedArgs[A any](name string, spec *sortFilter) (reflect.Type, error) {
 	extra := reflect.TypeFor[A]()
 	fields := []reflect.StructField{
 		{Name: "First", Type: reflect.TypeFor[*int32](), Tag: `description:"Return the first n items."`},
@@ -532,17 +532,28 @@ func mergedArgs[A any](spec *sortFilter) reflect.Type {
 	}
 	fields = append(fields, spec.argFields()...)
 
+	taken := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		taken[field.Name] = true
+	}
+
 	if extra.Kind() == reflect.Struct {
 		for i := 0; i < extra.NumField(); i++ {
 			field := extra.Field(i)
 			if field.PkgPath != "" {
 				continue
 			}
+			// The connection's own arguments and the resolver's share one
+			// struct, so a name used twice would be two arguments of one name.
+			if taken[field.Name] {
+				return nil, fmt.Errorf("%s: the argument %s is already a connection argument; name it something else", name, field.Name)
+			}
+			taken[field.Name] = true
 			fields = append(fields, field)
 		}
 	}
 
-	return reflect.StructOf(fields)
+	return reflect.StructOf(fields), nil
 }
 
 // splitArgs separates the pagination arguments, the search arguments and the
