@@ -330,15 +330,29 @@ guessable or forgeable:
 lightning.New(relay.Plugin(relay.WithCodec(mySignedCodec{})))
 ```
 
-An argument typed `relay.GID` arrives **already decoded**, and a malformed one
-is a client error before the resolver runs:
+An argument typed `relay.ID[Task]` is an `ID` on the wire and a decoded local
+identifier in Go, and an identifier naming anything but a `Task` is refused
+while the query is prepared — before anything runs:
 
 ```go
 type SetDoneArgs struct {
-    ID   relay.GID `graphql:"id"`
+    ID   relay.ID[Task] `graphql:"id"`
     Done bool
 }
-// args.ID.Type is "Task"; args.ID.Local is the local identifier
+
+// args.ID.Local is the local identifier, already known to name a Task.
+```
+
+That is the `localID` helper every project writes by hand, with the check the
+hand-written one usually forgets. Where a field genuinely takes any
+identifier — `node(id:)` does, and so does a field whose owner may be a `User`
+or a `Team` — `relay.GID` accepts one of any type and reports both halves:
+
+```go
+type AddTaskArgs struct {
+    OwnerID relay.GID `graphql:"ownerId"`
+}
+// args.OwnerID.Type is "User" or "Team"; args.OwnerID.Local is the identifier
 ```
 
 ### Connections

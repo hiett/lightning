@@ -979,3 +979,26 @@ slice, so a `*[]T` reached it as a pointer and it panicked taking the length of
 one. A nil pointer to a list is now null and a non-nil one is the list it points
 at — which is what the nullability table in D26 promised all along, and what
 nothing had yet returned.
+
+## D47. A global identifier can say what it names
+
+`relay.GID` accepts any global identifier, which is right for `node(id:)` and
+wrong almost everywhere else: a mutation that takes a task's identifier has no
+use for a user's, and being handed one is a client mistake.
+
+`relay.ID[Task]` is an `ID` on the wire — the schema is identical, which is why
+adding it to the example changed no line of `schema.graphql` — and a decoded
+local identifier in Go. An identifier naming anything but a `Task` is refused
+**while the query is prepared**, which is earlier than a resolver could refuse
+it, with a message saying what was expected.
+
+This deletes the decode-and-check helper every project writes by hand, along
+with the check the hand-written one usually forgets.
+
+Reaching it needed one addition to the seam. `ID[T]` is a different Go type for
+every `T` and nothing can enumerate the instantiations an application will use,
+so scalars could not be registered one at a time. `Builder.ScalarShapes` takes a
+function consulted for any Go type the builder does not otherwise recognise, and
+relay claims the ones that are an `ID[T]`. The seam is general — it is how any
+plugin claims a family of Go types — and the core still knows nothing about
+relay.

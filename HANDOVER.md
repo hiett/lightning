@@ -149,7 +149,7 @@ query.
 
 ## 4. Decisions a human should look at
 
-`DECISIONS.md` has all forty-six in full. These are the ones with consequences.
+`DECISIONS.md` has all forty-seven in full. These are the ones with consequences.
 
 From the first refactor:
 
@@ -196,6 +196,11 @@ single-parent path is the same function called with one parent, so
 
 **`__key` is opt-in** (D33). It travels only where the live-query diff needs it,
 not on every HTTP response.
+
+**A global identifier can be typed** (D47). `relay.ID[Task]` is an `ID` on the
+wire and a decoded local identifier in Go, and another type's identifier is
+refused while the query is prepared. `relay.GID` still accepts any, for the
+fields that genuinely take any.
 
 ---
 
