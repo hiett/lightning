@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/reactive"
 	"github.com/stretchr/testify/require"
 )
@@ -23,32 +23,31 @@ func TestReactiveCacheResetsOnError(t *testing.T) {
 	var mu sync.Mutex
 	calls := 0
 
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
 
-	query := schema.Query()
-	query.FieldFunc("users", func(ctx context.Context) []*User {
-		return users
-	})
-	query.FieldFunc("uncachedError", func() (string, error) {
-		return "", errors.New("this is not cached")
-	})
-	_ = schema.Mutation()
-
-	user := schema.Object("User", User{})
-	user.FieldFunc("slow", func(ctx context.Context, u *User) *Slow {
+	user := lightning.Object[User](b)
+	user.Field("slow", func(ctx context.Context, u *User) (*Slow, error) {
 		reactive.AddDependency(ctx, u.resource, nil)
-		return new(Slow)
+		return new(Slow), nil
 	})
 
-	slow := schema.Object("Slow", Slow{})
-	slow.FieldFunc("count", func() bool {
+	slow := lightning.Object[Slow](b)
+	slow.Field("count", func(ctx context.Context, _ *Slow) (bool, error) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
-		return true
+		return true, nil
 	})
 
-	builtSchema := schema.MustBuild()
+	query := b.Query()
+	query.Field("users", func(ctx context.Context, _ *lightning.Root) ([]*User, error) {
+		return users, nil
+	})
+	query.Field("uncachedError", func(ctx context.Context, _ *lightning.Root) (string, error) {
+		return "", errors.New("this is not cached")
+	})
+
+	builtSchema := b.MustBuild()
 
 	q := graphql.MustParse(`
 		{

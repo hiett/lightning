@@ -5,42 +5,44 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal"
 	"github.com/hiett/lightning/internal/testgraphql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// Item is the list element the directive tests select fields of.
+type Item struct {
+	lightning.Meta `graphql:"Item"`
+
+	Id     int64
+	Number int64 `graphql:"-"`
+}
+
 func buildSchema() *graphql.Schema {
-	schema := schemabuilder.NewSchema()
-	type Inner struct {
-	}
+	b := lightning.New()
 
-	query := schema.Query()
-	query.FieldFunc("inner", func() Inner {
-		return Inner{}
-	})
-
-	item := schema.Object("Item", Item{})
-	item.Key("id")
-	item.FieldFunc("name", func(ctx context.Context, item Item) (string, error) {
+	item := lightning.Object[Item](b)
+	item.Field("name", func(ctx context.Context, item *Item) (string, error) {
 		return fmt.Sprint(item.Id), nil
 	})
-	item.FieldFunc("number", func(ctx context.Context, item Item) (string, error) {
+	item.Field("number", func(ctx context.Context, item *Item) (string, error) {
 		return fmt.Sprint(item.Number), nil
 	})
-	query.FieldFunc("items", func(ctx context.Context) ([]Item, error) {
-		retList := make([]Item, 5)
-		retList[0] = Item{Id: 1, Number: 11}
-		retList[1] = Item{Id: 2, Number: 12}
-		retList[2] = Item{Id: 3, Number: 13}
-		retList[3] = Item{Id: 4, Number: 14}
-		retList[4] = Item{Id: 5, Number: 15}
-		return retList, nil
+
+	b.Query().Field("items", func(ctx context.Context, _ *lightning.Root) ([]Item, error) {
+		return []Item{
+			{Id: 1, Number: 11},
+			{Id: 2, Number: 12},
+			{Id: 3, Number: 13},
+			{Id: 4, Number: 14},
+			{Id: 5, Number: 15},
+		}, nil
 	})
-	return schema.MustBuild()
+
+	return b.MustBuild()
 }
 
 func TestSkipDirectives(t *testing.T) {
@@ -199,26 +201,11 @@ func TestDirectivesWithVariables(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, map[string]interface{}{
 		"items": []interface{}{
-			map[string]interface{}{
-				"__key": "1",
-				"name":  "1",
-			},
-			map[string]interface{}{
-				"__key": "2",
-				"name":  "2",
-			},
-			map[string]interface{}{
-				"__key": "3",
-				"name":  "3",
-			},
-			map[string]interface{}{
-				"__key": "4",
-				"name":  "4",
-			},
-			map[string]interface{}{
-				"__key": "5",
-				"name":  "5",
-			},
+			map[string]interface{}{"name": "1"},
+			map[string]interface{}{"name": "2"},
+			map[string]interface{}{"name": "3"},
+			map[string]interface{}{"name": "4"},
+			map[string]interface{}{"name": "5"},
 		},
 	}, val)
 }
@@ -258,6 +245,8 @@ func TestDirectivesWithErrors(t *testing.T) {
 }
 
 type mergedInner struct {
+	lightning.Meta `graphql:"mergedInner"`
+
 	X string
 	Y string
 }
@@ -272,9 +261,12 @@ type mergedInner struct {
 // whether the field was selected twice, which is to say on whether some
 // unrelated fragment elsewhere in the document also asked for it.
 func TestDirectivesOnRepeatedSelections(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("inner", func() mergedInner { return mergedInner{X: "x", Y: "y"} })
-	built := schema.MustBuild()
+	b := lightning.New()
+	lightning.Object[mergedInner](b)
+	b.Query().Field("inner", func(ctx context.Context, _ *lightning.Root) (mergedInner, error) {
+		return mergedInner{X: "x", Y: "y"}, nil
+	})
+	built := b.MustBuild()
 
 	run := func(t *testing.T, query string) interface{} {
 		t.Helper()

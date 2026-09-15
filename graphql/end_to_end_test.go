@@ -8,51 +8,69 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/concurrencylimiter"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal"
 	"github.com/hiett/lightning/internal/testgraphql"
 	"github.com/hiett/lightning/reactive"
 	"github.com/stretchr/testify/assert"
 )
 
+// User is a person with a slow field hanging off it, for the caching and
+// parallelism tests.
+type User struct {
+	lightning.Meta `graphql:"User"`
+
+	Name     string
+	Age      int64
+	resource *reactive.Resource
+}
+
+// Slow is what User.slow resolves to, so that the test can count how often its
+// own field is recomputed.
+type Slow struct {
+	lightning.Meta `graphql:"Slow"`
+}
+
+// pathInner and pathExpensive nest deeply enough for an error to have a path
+// worth printing.
+type pathInner struct {
+	lightning.Meta `graphql:"inner"`
+}
+
+type pathExpensive struct {
+	lightning.Meta `graphql:"expensive"`
+}
+
 func TestPathError(t *testing.T) {
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
 
-	type Inner struct{}
-
-	query := schema.Query()
-	query.FieldFunc("inner", func() Inner {
-		return Inner{}
+	inner := lightning.Object[pathInner](b)
+	inner.Field("expensive", func(ctx context.Context, _ *pathInner) (pathExpensive, error) {
+		return pathExpensive{}, nil
+	}).Expensive()
+	inner.Field("inners", func(ctx context.Context, _ *pathInner) ([]pathInner, error) {
+		return []pathInner{{}}, nil
 	})
 
-	query.FieldFunc("safe", func() error {
-		return graphql.NewSafeError("safe safe")
+	nested := lightning.Object[pathExpensive](b)
+	nested.Field("expensives", func(ctx context.Context, _ *pathExpensive) ([]pathExpensive, error) {
+		return []pathExpensive{{}}, nil
+	})
+	nested.Field("err", func(ctx context.Context, _ *pathExpensive) (bool, error) {
+		return false, errors.New("no good, bad")
 	})
 
-	_ = schema.Mutation()
-
-	type Expensive struct{}
-
-	inner := schema.Object("inner", Inner{})
-	inner.FieldFunc("expensive", func(ctx context.Context) Expensive {
-		return Expensive{}
-	}, schemabuilder.Expensive)
-	inner.FieldFunc("inners", func(ctx context.Context) []Inner {
-		return []Inner{Inner{}}
+	query := b.Query()
+	query.Field("inner", func(ctx context.Context, _ *lightning.Root) (pathInner, error) {
+		return pathInner{}, nil
+	})
+	query.Field("safe", func(ctx context.Context, _ *lightning.Root) (bool, error) {
+		return false, graphql.NewSafeError("safe safe")
 	})
 
-	nested := schema.Object("expensive", Expensive{})
-	nested.FieldFunc("expensives", func(ctx context.Context) []Expensive {
-		return []Expensive{Expensive{}}
-	})
-
-	nested.FieldFunc("err", func() error {
-		return errors.New("no good, bad")
-	})
-
-	builtSchema := schema.MustBuild()
+	builtSchema := b.MustBuild()
 
 	q := graphql.MustParse(`
 		{
@@ -95,52 +113,38 @@ func TestPathError(t *testing.T) {
 }
 
 func TestEnum(t *testing.T) {
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
 
-	type enumType int32
-	type enumType2 float64
-
-	schema.Enum(enumType(1), map[string]interface{}{
+	lightning.Enum(b, "enumType", map[string]enumType{
 		"firstField":  enumType(1),
 		"secondField": enumType(2),
 		"thirdField":  enumType(3),
 	})
-	schema.Enum(enumType2(1.2), map[string]float64{
-		"this": float64(1.2),
-		"is":   float64(3.2),
-		"a":    float64(4.3),
-		"map":  float64(5.3),
+	lightning.Enum(b, "enumType2", map[string]enumType2{
+		"this": enumType2(1.2),
+		"is":   enumType2(3.2),
+		"a":    enumType2(4.3),
+		"map":  enumType2(5.3),
 	})
 
-	query := schema.Query()
-	query.FieldFunc("inner", func(args struct {
-		EnumField enumType
-	}) enumType {
-		return args.EnumField
+	query := b.Query()
+	query.FieldArgs("inner", func(ctx context.Context, _ *lightning.Root, args enumArgs) (enumType, error) {
+		return args.EnumField, nil
 	})
-	query.FieldFunc("inner2", func(args struct {
-		EnumField2 enumType2
-	}) enumType2 {
-		return args.EnumField2
+	query.FieldArgs("inner2", func(ctx context.Context, _ *lightning.Root, args enum2Args) (enumType2, error) {
+		return args.EnumField2, nil
 	})
-
-	query.FieldFunc("optional", func(args struct {
-		EnumField *enumType
-	}) enumType {
+	query.FieldArgs("optional", func(ctx context.Context, _ *lightning.Root, args optionalEnumArgs) (enumType, error) {
 		if args.EnumField != nil {
-			return *args.EnumField
-		} else {
-			return enumType(4)
+			return *args.EnumField, nil
 		}
+		return enumType(4), nil
+	})
+	query.FieldArgs("pointerret", func(ctx context.Context, _ *lightning.Root, args optionalEnumArgs) (*enumType, error) {
+		return args.EnumField, nil
 	})
 
-	query.FieldFunc("pointerret", func(args struct {
-		EnumField *enumType
-	}) *enumType {
-		return args.EnumField
-	})
-
-	builtSchema := schema.MustBuild()
+	builtSchema := b.MustBuild()
 
 	q := graphql.MustParse(`
 		{
@@ -211,11 +215,21 @@ func TestEnum(t *testing.T) {
 	e = testgraphql.NewExecutorWrapper(t)
 	val, err = e.Execute(context.Background(), builtSchema.Query, nil, q)
 	assert.Nil(t, err)
+	// A pointer to an enum resolves to the enum's name, as the value form does.
+	// The old builder gave a *enumType field a plain number type, so the same
+	// value came back as 1 through one field and "firstField" through another.
 	assert.Equal(t, map[string]interface{}{
-		"pointerret": float64(1),
+		"pointerret": "firstField",
 	}, internal.AsJSON(val))
 
 }
+
+type enumType int32
+type enumType2 float64
+
+type enumArgs struct{ EnumField enumType }
+type enum2Args struct{ EnumField2 enumType2 }
+type optionalEnumArgs struct{ EnumField *enumType }
 
 // TestEndToEndAwaitAndCache tests that slow fields get run in parallel and cached.
 //
@@ -234,31 +248,28 @@ func TestEndToEndAwaitAndCache(t *testing.T) {
 	var mu sync.Mutex
 	calls := 0
 
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
 
-	query := schema.Query()
-	query.FieldFunc("users", func(ctx context.Context) []*User {
-		return users
-	}, schemabuilder.Expensive)
-
-	_ = schema.Mutation()
-
-	user := schema.Object("User", User{})
-	user.FieldFunc("slow", func(ctx context.Context, u *User) *Slow {
+	user := lightning.Object[User](b)
+	user.Field("slow", func(ctx context.Context, u *User) (*Slow, error) {
 		reactive.AddDependency(ctx, u.resource, nil)
 		time.Sleep(100 * time.Millisecond)
-		return new(Slow)
-	}, schemabuilder.Expensive)
+		return new(Slow), nil
+	}).Expensive()
 
-	slow := schema.Object("Slow", Slow{})
-	slow.FieldFunc("count", func() bool {
+	slow := lightning.Object[Slow](b)
+	slow.Field("count", func(ctx context.Context, _ *Slow) (bool, error) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
-		return true
+		return true, nil
 	})
 
-	builtSchema := schema.MustBuild()
+	b.Query().Field("users", func(ctx context.Context, _ *lightning.Root) ([]*User, error) {
+		return users, nil
+	}).Expensive()
+
+	builtSchema := b.MustBuild()
 
 	q := graphql.MustParse(`
 		{
@@ -345,22 +356,20 @@ func verifyArgumentOption(t *testing.T, query graphql.Type, queryString string, 
 // TestArgumentOptionality tests that optional arguments can be omitted from
 // query variables and that mandatory arguments must be included.
 func TestArgumentOptionality(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	query := schema.Query()
+	b := lightning.New()
+	query := b.Query()
 
-	query.FieldFunc("optional", func(args struct{ X *int64 }) int64 {
+	query.FieldArgs("optional", func(ctx context.Context, _ *lightning.Root, args optionalIntArgs) (int64, error) {
 		if args.X != nil {
-			return *args.X
+			return *args.X, nil
 		}
-		return -1
+		return -1, nil
+	})
+	query.FieldArgs("mandatory", func(ctx context.Context, _ *lightning.Root, args mandatoryIntArgs) (int64, error) {
+		return args.X, nil
 	})
 
-	query.FieldFunc("mandatory", func(args struct{ X int64 }) int64 {
-		return args.X
-	})
-
-	_ = schema.Mutation()
-	builtSchema := schema.MustBuild()
+	builtSchema := b.MustBuild()
 	emptyVariables := map[string]interface{}{}
 	filledVariables := map[string]interface{}{
 		"testArg": float64(5),
@@ -385,6 +394,9 @@ func TestArgumentOptionality(t *testing.T) {
 		}`, filledVariables, `{"mandatory": "5"}`)
 }
 
+type optionalIntArgs struct{ X *int64 }
+type mandatoryIntArgs struct{ X int64 }
+
 // TestConcurrencyLimiterDeadlock tests that the executor does not cause a
 // concurrency limit deadlock by holding on to tokens after a resolver finishes
 // running.
@@ -392,34 +404,31 @@ func TestConcurrencyLimiterDeadlock(t *testing.T) {
 	var mu sync.Mutex
 	calls := 0
 
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
 
-	query := schema.Query()
-	query.FieldFunc("users", func(ctx context.Context) []*User {
+	user := lightning.Object[User](b)
+	user.Field("slow", func(ctx context.Context, u *User) (*Slow, error) {
+		time.Sleep(10 * time.Millisecond)
+		return &Slow{}, nil
+	})
+
+	slow := lightning.Object[Slow](b)
+	slow.Field("count", func(ctx context.Context, _ *Slow) (bool, error) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return true, nil
+	})
+
+	b.Query().Field("users", func(ctx context.Context, _ *lightning.Root) ([]*User, error) {
 		var users []*User
 		for i := 0; i < 200; i++ {
 			users = append(users, &User{})
 		}
-		return users
+		return users, nil
 	})
 
-	_ = schema.Mutation()
-
-	user := schema.Object("User", User{})
-	user.FieldFunc("slow", func(ctx context.Context, u *User) *Slow {
-		time.Sleep(10 * time.Millisecond)
-		return &Slow{}
-	})
-
-	slow := schema.Object("Slow", Slow{})
-	slow.FieldFunc("count", func() bool {
-		mu.Lock()
-		calls++
-		mu.Unlock()
-		return true
-	})
-
-	builtSchema := schema.MustBuild()
+	builtSchema := b.MustBuild()
 
 	q := graphql.MustParse(`
 		{
