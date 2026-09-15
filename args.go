@@ -62,6 +62,11 @@ func (b *Builder) buildArguments(goType reflect.Type, at string) (map[string]gra
 			continue
 		}
 
+		// A struct reached through an argument is an input object, and is
+		// declared here rather than by the author: an argument's shape is
+		// already fully described by the Go type it is read into.
+		b.declareInputTypes(field.Type)
+
 		argType, err := b.graphQLType(field.Type, fmt.Sprintf("%s(%s:)", at, docs.name))
 		if err != nil {
 			return nil, nil, nil, err
@@ -186,6 +191,39 @@ func applyDefault(dest reflect.Value, field argField) error {
 	return nil
 }
 
+// declareInputTypes declares, as input objects, every struct reachable through
+// an argument's Go type.
+//
+// An argument's shape is completely described by the type it is read into, so
+// requiring the author to declare it as well would be asking for the same
+// information twice.
+func (b *Builder) declareInputTypes(goType reflect.Type) {
+	for goType.Kind() == reflect.Ptr || goType.Kind() == reflect.Slice {
+		if goType == bytesType {
+			return
+		}
+		goType = goType.Elem()
+	}
+
+	if goType.Kind() != reflect.Struct || isScalarStruct(goType) {
+		return
+	}
+	if _, declared := b.decls[goType]; declared {
+		return
+	}
+
+	decl := b.declare(goType, kindInput)
+	decl.exposeAll = true
+
+	for i := 0; i < goType.NumField(); i++ {
+		field := goType.Field(i)
+		if isMarkerField(field) || field.PkgPath != "" {
+			continue
+		}
+		b.declareInputTypes(field.Type)
+	}
+}
+
 // argParser builds the function that reads one JSON value into a Go value.
 func (b *Builder) argParser(goType reflect.Type, at string) (func(any, reflect.Value) error, error) {
 	if goType.Kind() == reflect.Ptr {
@@ -246,8 +284,7 @@ func (b *Builder) argParser(goType reflect.Type, at string) (func(any, reflect.V
 
 	// A nested struct is an input object.
 	if goType.Kind() == reflect.Struct && !isScalarStruct(goType) {
-		decl := b.declare(goType, kindInput)
-		decl.exposeAll = true
+		b.declareInputTypes(goType)
 		_, parse, _, err := b.buildArguments(goType, at)
 		if err != nil {
 			return nil, err
