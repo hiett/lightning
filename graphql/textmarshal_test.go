@@ -1,37 +1,31 @@
 package graphql_test
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"testing"
 
-	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/internal/testgraphql"
 )
 
 func TestTextMarshaling(t *testing.T) {
 	counter = 0
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
 
-	type Inner struct {
-		PtrUuid      *Uuid
-		Uuid         Uuid
-		UuidSlice    []Uuid
-		PtrUuidSlice []*Uuid
-	}
-
-	o := schema.Object("Inner", Inner{})
-	o.FieldFunc("uuidFunc", func(inner Inner) Uuid {
+	o := lightning.Object[TextInner](b)
+	o.Attr("uuidFunc", func(inner *TextInner) Uuid {
 		return inner.Uuid
 	})
-	o.FieldFunc("uuidSliceFunc", func(inner Inner) []Uuid {
+	o.Attr("uuidSliceFunc", func(inner *TextInner) []Uuid {
 		return inner.UuidSlice
 	})
-	o.FieldFunc("ptrUuidSliceFunc", func(inner Inner) []*Uuid {
+	o.Attr("ptrUuidSliceFunc", func(inner *TextInner) []*Uuid {
 		return inner.PtrUuidSlice
 	})
-	o.FieldFunc("invalidUuidFunc", func(inner Inner) Uuid {
+	o.Attr("invalidUuidFunc", func(inner *TextInner) Uuid {
 		return Uuid{marshalError: errors.New("invalidUUID")} // Invalid Uuid type (for testing)
 	})
 
@@ -41,23 +35,16 @@ func TestTextMarshaling(t *testing.T) {
 		NewUuidPtr(),
 	}
 
-	query := schema.Query()
-	query.FieldFunc("inner", func(input struct {
-		InputPtrUuid   *Uuid
-		InputUuid      Uuid
-		InputUuidSlice []Uuid
-	}) Inner {
-		return Inner{
+	b.Query().FieldArgs("inner", func(ctx context.Context, _ *lightning.Root, input textInnerArgs) (TextInner, error) {
+		return TextInner{
 			PtrUuid:      input.InputPtrUuid,
 			Uuid:         input.InputUuid,
 			UuidSlice:    input.InputUuidSlice,
 			PtrUuidSlice: PtrUuidSliceResp,
-		}
+		}, nil
 	})
 
-	_ = schema.Mutation()
-
-	builtSchema := schema.MustBuild()
+	builtSchema := b.MustBuild()
 
 	snap := testgraphql.NewSnapshotter(t, builtSchema)
 	defer snap.Verify()
@@ -118,6 +105,22 @@ func TestTextMarshaling(t *testing.T) {
 		}
 	}`, testgraphql.RecordError)
 
+}
+
+// TextInner holds one of every shape a text-marshalling type can take.
+type TextInner struct {
+	lightning.Meta `graphql:"Inner"`
+
+	PtrUuid      *Uuid
+	Uuid         Uuid
+	UuidSlice    []Uuid
+	PtrUuidSlice []*Uuid
+}
+
+type textInnerArgs struct {
+	InputPtrUuid   *Uuid
+	InputUuid      Uuid
+	InputUuidSlice []Uuid
 }
 
 // Uuid is a testable version of a "Text Marshalable" type.

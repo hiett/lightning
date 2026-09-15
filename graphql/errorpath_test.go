@@ -6,13 +6,15 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal/testgraphql"
 	"github.com/stretchr/testify/require"
 )
 
 type pathRow struct {
+	lightning.Meta `graphql:"PathRow"`
+
 	Name string
 }
 
@@ -20,22 +22,21 @@ type pathRow struct {
 // deep inside a query reports the response path that leads to it, with list
 // indices as numbers.
 func TestErrorPath(t *testing.T) {
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
 
-	query := schema.Query()
-	query.FieldFunc("rows", func() []*pathRow {
-		return []*pathRow{{Name: "ok"}, {Name: "boom"}, {Name: "ok"}}
-	})
-
-	row := schema.Object("PathRow", pathRow{})
-	row.FieldFunc("shout", func(r *pathRow) (string, error) {
+	row := lightning.Object[pathRow](b)
+	row.Field("shout", func(ctx context.Context, r *pathRow) (string, error) {
 		if r.Name == "boom" {
 			return "", errors.New("it broke")
 		}
 		return r.Name, nil
 	})
 
-	built := schema.MustBuild()
+	b.Query().Field("rows", func(ctx context.Context, _ *lightning.Root) ([]*pathRow, error) {
+		return []*pathRow{{Name: "ok"}, {Name: "boom"}, {Name: "ok"}}, nil
+	})
+
+	built := b.MustBuild()
 
 	q := graphql.MustParse(`query Named { rows { loud: shout } }`, nil)
 	require.NoError(t, graphql.PrepareQuery(context.Background(), built.Query, q.SelectionSet))
@@ -60,11 +61,11 @@ func TestErrorPath(t *testing.T) {
 // TestErrorPathIsClientSafe checks that a client-safe error keeps its message
 // while an ordinary Go error is replaced with a generic one.
 func TestErrorPathIsClientSafe(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("safe", func() (string, error) {
+	b := lightning.New()
+	b.Query().Field("safe", func(ctx context.Context, _ *lightning.Root) (string, error) {
 		return "", graphql.NewClientError("you asked for the wrong thing")
 	})
-	built := schema.MustBuild()
+	built := b.MustBuild()
 
 	q := graphql.MustParse(`{ safe }`, nil)
 	require.NoError(t, graphql.PrepareQuery(context.Background(), built.Query, q.SelectionSet))

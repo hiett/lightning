@@ -14,7 +14,7 @@
     "Name": "missing required parameter",
     "Values": [
       {
-        "Error": "error parsing args for \"inner\": requiredInput: not a string"
+        "Error": "error parsing args for \"inner\": requiredInput: required argument missing"
       }
     ]
   },

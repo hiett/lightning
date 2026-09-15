@@ -1,12 +1,13 @@
 package graphql_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -19,40 +20,46 @@ const (
 )
 
 type DocumentedThing struct {
+	lightning.Meta `graphql:"DocumentedThing" description:"A thing with documentation on it."`
+
 	Name string `description:"What the thing is called."`
 	Old  string `description:"An address." deprecated:"Use addresses instead."`
 	Kind documentedEnum
 }
 
 type DocumentedFilter struct {
+	lightning.Meta `graphql:"DocumentedFilter"`
+
 	Term string `description:"What to search for."`
+}
+
+type documentedSearchArgs struct {
+	Filter DocumentedFilter `description:"How to narrow the search."`
 }
 
 func documentedSchema(t *testing.T) *graphql.Schema {
 	t.Helper()
 
-	schema := schemabuilder.NewSchema()
-	schema.Enum(documentedEnum(0), map[string]documentedEnum{
+	b := lightning.New()
+
+	enum := lightning.Enum(b, "documentedEnum", map[string]documentedEnum{
 		"FIRST":  documentedEnumFirst,
 		"SECOND": documentedEnumSecond,
-	},
-		schemabuilder.EnumDescription("How a thing is classified."),
-		schemabuilder.EnumValueDescriptions(map[string]string{"FIRST": "The first kind."}),
-		schemabuilder.EnumValueDeprecations(map[string]string{"SECOND": "Nobody uses this."}),
-	)
+	}).Describe("How a thing is classified.")
+	enum.Value("FIRST").Describe("The first kind.")
+	enum.Value("SECOND").Deprecate("Nobody uses this.")
 
-	thing := schema.Object("DocumentedThing", DocumentedThing{})
-	thing.Describe("A thing with documentation on it.")
+	lightning.Object[DocumentedThing](b)
 
-	query := schema.Query()
-	query.FieldFunc("search", func(args struct{ Filter DocumentedFilter }) *DocumentedThing { return nil },
-		schemabuilder.Description("Finds a thing."),
-		schemabuilder.ArgDescription("filter", "How to narrow the search."))
-	query.FieldFunc("legacy", func() string { return "" },
-		schemabuilder.Deprecated(""))
+	query := b.Query()
+	query.FieldArgs("search", func(ctx context.Context, _ *lightning.Root, args documentedSearchArgs) (*DocumentedThing, error) {
+		return nil, nil
+	}).Describe("Finds a thing.")
+	query.Field("legacy", func(ctx context.Context, _ *lightning.Root) (string, error) {
+		return "", nil
+	}).Deprecate("")
 
-	_ = schema.Mutation()
-	return schema.MustBuild()
+	return b.MustBuild()
 }
 
 // TestDescriptionsAndDeprecationReachSDL checks both authoring routes: struct

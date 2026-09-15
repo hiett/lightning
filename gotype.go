@@ -110,9 +110,9 @@ func (b *Builder) namedType(goType reflect.Type, at string) (graphql.Type, error
 	}
 
 	// A type that marshals itself to text is a String. This is how time-like
-	// and id-like types were supported before and still are.
+	// and id-like types are supported without registering a scalar for each.
 	if implementsTextMarshaler(goType) {
-		return newScalar(scalarString), nil
+		return textMarshalerScalar(), nil
 	}
 
 	if goType.Kind() == reflect.Struct {
@@ -120,6 +120,42 @@ func (b *Builder) namedType(goType reflect.Type, at string) (graphql.Type, error
 	}
 
 	return nil, fmt.Errorf("%s: cannot express the Go type %s in GraphQL", at, typeName(goType))
+}
+
+// textMarshalerScalar is the String a text-marshalling type becomes.
+//
+// The conversion happens here rather than in the JSON encoder so that a type
+// which fails to marshal reports a GraphQL error naming the field, instead of
+// failing halfway through writing the response.
+func textMarshalerScalar() *graphql.Scalar {
+	scalar := newScalar(scalarString)
+	scalar.Unwrapper = func(source any) (any, error) {
+		value := reflect.ValueOf(source)
+		if !value.IsValid() || (value.Kind() == reflect.Ptr && value.IsNil()) {
+			return nil, nil
+		}
+		marshaler, ok := value.Interface().(encoding.TextMarshaler)
+		if !ok {
+			// A value type whose MarshalText is on the pointer receiver.
+			if value.CanAddr() {
+				marshaler, ok = value.Addr().Interface().(encoding.TextMarshaler)
+			}
+			if !ok {
+				addressable := reflect.New(value.Type())
+				addressable.Elem().Set(value)
+				marshaler, ok = addressable.Interface().(encoding.TextMarshaler)
+			}
+			if !ok {
+				return nil, fmt.Errorf("%T does not marshal itself to text", source)
+			}
+		}
+		text, err := marshaler.MarshalText()
+		if err != nil {
+			return nil, err
+		}
+		return string(text), nil
+	}
+	return scalar
 }
 
 // implementsTextMarshaler reports whether values of goType, or pointers to

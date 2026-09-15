@@ -1,34 +1,40 @@
 package graphql_test
 
 import (
+	"context"
 	"testing"
 
-	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/internal/testgraphql"
 )
 
+// defaultInner is what the query returns.
+type defaultInner struct {
+	lightning.Meta `graphql:"Inner"`
+
+	OptionalValue string
+	RequiredValue string
+}
+
+// defaultArgs has one argument of each kind: a value field is required, and a
+// field with a default is not.
+type defaultArgs struct {
+	OptionalInput string `default:""`
+	RequiredInput string
+}
+
 func TestDefaultArgs(t *testing.T) {
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
+	lightning.Object[defaultInner](b)
 
-	type Inner struct {
-		OptionalValue string
-		RequiredValue string
-	}
-
-	query := schema.Query()
-	query.FieldFunc("inner", func(input struct {
-		OptionalInput string `graphql:",optional"`
-		RequiredInput string
-	}) Inner {
-		return Inner{
+	b.Query().FieldArgs("inner", func(ctx context.Context, _ *lightning.Root, input defaultArgs) (defaultInner, error) {
+		return defaultInner{
 			OptionalValue: input.OptionalInput,
 			RequiredValue: input.RequiredInput,
-		}
+		}, nil
 	})
 
-	_ = schema.Mutation()
-
-	builtSchema := schema.MustBuild()
+	builtSchema := b.MustBuild()
 
 	snap := testgraphql.NewSnapshotter(t, builtSchema)
 	defer snap.Verify()
