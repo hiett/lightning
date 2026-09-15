@@ -340,3 +340,17 @@ func TestManualConnectionArgs(t *testing.T) {
 	require.Len(t, conn["edges"].([]any), 1)
 	require.Equal(t, true, conn["pageInfo"].(map[string]any)["hasNextPage"])
 }
+
+// TestConnectionWithoutThePluginSaysSo checks the error when relay.Plugin() was
+// never installed, which is the mistake a first schema makes.
+func TestConnectionWithoutThePluginSaysSo(t *testing.T) {
+	b := lightning.New()
+	lightning.Object[Widget](b)
+	relay.Connection(b.Query(), "widgets", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Widget, error) {
+		return nil, nil
+	})
+	b.Query().Field("first", func(ctx context.Context, _ *lightning.Root) (*Widget, error) { return nil, nil })
+
+	_, err := b.Build()
+	require.ErrorContains(t, err, "relay.Plugin()")
+}
