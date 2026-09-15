@@ -85,13 +85,13 @@
           "subscriptionType": null,
           "types": [
             {
-              "description": "",
-              "enumValues": [],
+              "description": null,
+              "enumValues": null,
               "fields": [
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "batteryLevel",
                   "type": {
@@ -106,8 +106,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "name",
                   "type": {
@@ -122,8 +122,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "uuid",
                   "type": {
@@ -137,28 +137,28 @@
                   }
                 }
               ],
-              "inputFields": [],
+              "inputFields": null,
               "interfaces": [],
               "kind": "OBJECT",
               "name": "Asset",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
-              "enumValues": [],
-              "fields": [],
-              "inputFields": [],
-              "interfaces": [],
+              "description": null,
+              "enumValues": null,
+              "fields": null,
+              "inputFields": null,
+              "interfaces": null,
               "kind": "SCALAR",
               "name": "Boolean",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
-              "enumValues": [],
-              "fields": [],
-              "inputFields": [],
-              "interfaces": [],
+              "description": null,
+              "enumValues": null,
+              "fields": null,
+              "inputFields": null,
+              "interfaces": null,
               "kind": "UNION",
               "name": "Gateway",
               "possibleTypes": [
@@ -175,13 +175,13 @@
               ]
             },
             {
-              "description": "",
-              "enumValues": [],
-              "fields": [],
+              "description": null,
+              "enumValues": null,
+              "fields": null,
               "inputFields": [
                 {
                   "defaultValue": null,
-                  "description": "",
+                  "description": null,
                   "name": "name",
                   "type": {
                     "kind": "NON_NULL",
@@ -194,49 +194,49 @@
                   }
                 }
               ],
-              "interfaces": [],
+              "interfaces": null,
               "kind": "INPUT_OBJECT",
               "name": "GreetTarget",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
-              "enumValues": [],
-              "fields": [],
-              "inputFields": [],
-              "interfaces": [],
+              "description": null,
+              "enumValues": null,
+              "fields": null,
+              "inputFields": null,
+              "interfaces": null,
               "kind": "SCALAR",
               "name": "ID",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
-              "enumValues": [],
-              "fields": [],
-              "inputFields": [],
-              "interfaces": [],
+              "description": null,
+              "enumValues": null,
+              "fields": null,
+              "inputFields": null,
+              "interfaces": null,
               "kind": "SCALAR",
               "name": "Int",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
               "description": "A 64-bit signed integer, serialised as a decimal string because a JSON number cannot carry the full range without loss of precision.",
-              "enumValues": [],
-              "fields": [],
-              "inputFields": [],
-              "interfaces": [],
+              "enumValues": null,
+              "fields": null,
+              "inputFields": null,
+              "interfaces": null,
               "kind": "SCALAR",
               "name": "Int64",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
-              "enumValues": [],
+              "description": null,
+              "enumValues": null,
               "fields": [
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "sayHi",
                   "type": {
@@ -250,19 +250,19 @@
                   }
                 }
               ],
-              "inputFields": [],
+              "inputFields": null,
               "interfaces": [],
               "kind": "OBJECT",
               "name": "Mutation",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
               "description": "An object with a globally unique identifier, which a client can refetch with the node field.",
-              "enumValues": [],
+              "enumValues": null,
               "fields": [
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "A globally unique identifier.",
                   "isDeprecated": false,
                   "name": "id",
@@ -277,8 +277,8 @@
                   }
                 }
               ],
-              "inputFields": [],
-              "interfaces": [],
+              "inputFields": null,
+              "interfaces": null,
               "kind": "INTERFACE",
               "name": "Node",
               "possibleTypes": [
@@ -291,11 +291,11 @@
             },
             {
               "description": "Where a page sits in the whole list.",
-              "enumValues": [],
+              "enumValues": null,
               "fields": [
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "The cursor of the last item in this page, or null if it is empty.",
                   "isDeprecated": false,
                   "name": "endCursor",
@@ -307,7 +307,7 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "Whether more items follow this page.",
                   "isDeprecated": false,
                   "name": "hasNextPage",
@@ -323,7 +323,7 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "Whether more items precede this page.",
                   "isDeprecated": false,
                   "name": "hasPreviousPage",
@@ -339,7 +339,7 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "The cursor each page of the whole list starts at, for page-number pagination. An extension; Relay ignores it.",
                   "isDeprecated": false,
                   "name": "pages",
@@ -363,7 +363,7 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "The cursor of the first item in this page, or null if it is empty.",
                   "isDeprecated": false,
                   "name": "startCursor",
@@ -374,20 +374,20 @@
                   }
                 }
               ],
-              "inputFields": [],
+              "inputFields": null,
               "interfaces": [],
               "kind": "OBJECT",
               "name": "PageInfo",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
-              "enumValues": [],
+              "description": null,
+              "enumValues": null,
               "fields": [
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "gateway",
                   "type": {
@@ -398,8 +398,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "me",
                   "type": {
@@ -429,7 +429,7 @@
                       }
                     }
                   ],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "Looks up a single object by its global identifier.",
                   "isDeprecated": false,
                   "name": "node",
@@ -464,7 +464,7 @@
                       }
                     }
                   ],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "Looks up several objects by their global identifiers, in the order given.",
                   "isDeprecated": false,
                   "name": "nodes",
@@ -484,8 +484,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "noone",
                   "type": {
@@ -500,8 +500,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "nullableUser",
                   "type": {
@@ -512,8 +512,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "userUuid",
                   "type": {
@@ -565,8 +565,8 @@
                       }
                     }
                   ],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "usersConnection",
                   "type": {
@@ -622,8 +622,8 @@
                       }
                     }
                   ],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "usersConnectionPtr",
                   "type": {
@@ -638,8 +638,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "usersPtr",
                   "type": {
@@ -658,8 +658,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "usersPtrForceNonNullable",
                   "type": {
@@ -682,8 +682,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "usersUuid",
                   "type": {
@@ -706,8 +706,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "viewer",
                   "type": {
@@ -721,30 +721,30 @@
                   }
                 }
               ],
-              "inputFields": [],
+              "inputFields": null,
               "interfaces": [],
               "kind": "OBJECT",
               "name": "Query",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
-              "enumValues": [],
-              "fields": [],
-              "inputFields": [],
-              "interfaces": [],
+              "description": null,
+              "enumValues": null,
+              "fields": null,
+              "inputFields": null,
+              "interfaces": null,
               "kind": "SCALAR",
               "name": "String",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
-              "enumValues": [],
+              "description": null,
+              "enumValues": null,
               "fields": [
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "name",
                   "type": {
@@ -759,8 +759,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "speed",
                   "type": {
@@ -775,8 +775,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "uuid",
                   "type": {
@@ -790,49 +790,49 @@
                   }
                 }
               ],
-              "inputFields": [],
+              "inputFields": null,
               "interfaces": [],
               "kind": "OBJECT",
               "name": "Vehicle",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
+              "description": null,
               "enumValues": [
                 {
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "random"
                 },
                 {
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "random1"
                 },
                 {
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "random2"
                 }
               ],
-              "fields": [],
-              "inputFields": [],
-              "interfaces": [],
+              "fields": null,
+              "inputFields": null,
+              "interfaces": null,
               "kind": "ENUM",
               "name": "enumType",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
-              "description": "",
-              "enumValues": [],
+              "description": null,
+              "enumValues": null,
               "fields": [
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "friends",
                   "type": {
@@ -857,7 +857,7 @@
                   "args": [
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": null,
                       "name": "enumfield",
                       "type": {
                         "kind": "NON_NULL",
@@ -871,7 +871,7 @@
                     },
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": null,
                       "name": "include",
                       "type": {
                         "kind": "INPUT_OBJECT",
@@ -881,7 +881,7 @@
                     },
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": null,
                       "name": "optional",
                       "type": {
                         "kind": "SCALAR",
@@ -891,7 +891,7 @@
                     },
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": null,
                       "name": "other",
                       "type": {
                         "kind": "NON_NULL",
@@ -904,8 +904,8 @@
                       }
                     }
                   ],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "greet",
                   "type": {
@@ -920,7 +920,7 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "A globally unique identifier, which node(id:) resolves back to this object.",
                   "isDeprecated": false,
                   "name": "id",
@@ -936,8 +936,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "maybeAge",
                   "type": {
@@ -948,8 +948,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "name",
                   "type": {
@@ -964,8 +964,8 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
-                  "description": "",
+                  "deprecationReason": null,
+                  "description": null,
                   "isDeprecated": false,
                   "name": "uuid",
                   "type": {
@@ -979,7 +979,7 @@
                   }
                 }
               ],
-              "inputFields": [],
+              "inputFields": null,
               "interfaces": [
                 {
                   "kind": "INTERFACE",
@@ -989,15 +989,15 @@
               ],
               "kind": "OBJECT",
               "name": "user",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
               "description": "A paginated list of user, following the Relay Cursor Connections specification.",
-              "enumValues": [],
+              "enumValues": null,
               "fields": [
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "The items in this page, each with its cursor.",
                   "isDeprecated": false,
                   "name": "edges",
@@ -1021,7 +1021,7 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "Where this page sits in the whole list.",
                   "isDeprecated": false,
                   "name": "pageInfo",
@@ -1037,7 +1037,7 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "How many items the whole list holds. An extension; Relay ignores it.",
                   "isDeprecated": false,
                   "name": "totalCount",
@@ -1052,19 +1052,19 @@
                   }
                 }
               ],
-              "inputFields": [],
+              "inputFields": null,
               "interfaces": [],
               "kind": "OBJECT",
               "name": "userConnection",
-              "possibleTypes": []
+              "possibleTypes": null
             },
             {
               "description": "An edge in a user connection.",
-              "enumValues": [],
+              "enumValues": null,
               "fields": [
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "A cursor for use in pagination.",
                   "isDeprecated": false,
                   "name": "cursor",
@@ -1080,7 +1080,7 @@
                 },
                 {
                   "args": [],
-                  "deprecationReason": "",
+                  "deprecationReason": null,
                   "description": "The item at the end of the edge.",
                   "isDeprecated": false,
                   "name": "node",
@@ -1095,11 +1095,11 @@
                   }
                 }
               ],
-              "inputFields": [],
+              "inputFields": null,
               "interfaces": [],
               "kind": "OBJECT",
               "name": "userEdge",
-              "possibleTypes": []
+              "possibleTypes": null
             }
           ]
         }

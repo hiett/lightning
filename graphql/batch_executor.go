@@ -367,15 +367,26 @@ func resolveListBatch(ctx context.Context, sources []interface{}, typ *List, sel
 	reflectedSources := make([]reflect.Value, len(sources))
 	numFlattenedSources := 0
 	for idx, source := range sources {
-		reflectedSources[idx] = reflect.ValueOf(source)
-		if reflectedSources[idx].IsValid() {
-			numFlattenedSources += reflectedSources[idx].Len()
+		value := reflect.ValueOf(source)
+		// A resolver returning *[]T says the list itself is nullable, so a nil
+		// pointer is null and anything else is the list it points at.
+		for value.IsValid() && value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		reflectedSources[idx] = value
+		if value.IsValid() && value.Kind() == reflect.Slice {
+			numFlattenedSources += value.Len()
 		}
 	}
 
 	flattenedResps := make([]*outputNode, 0, numFlattenedSources)
 	flattenedSources := make([]interface{}, 0, numFlattenedSources)
 	for idx, slice := range reflectedSources {
+		if slice.IsValid() && slice.Kind() == reflect.Ptr {
+			// A nil pointer to a list is null, not an empty list.
+			destinations[idx].Fill(nil)
+			continue
+		}
 		if !slice.IsValid() {
 			destinations[idx].Fill(make([]interface{}, 0))
 			continue

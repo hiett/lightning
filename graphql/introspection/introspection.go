@@ -16,6 +16,16 @@ type introspection struct {
 	subscription graphql.Type
 }
 
+// text turns a documentation string into the nullable String the specification
+// types these fields as: an element with no description has none, rather than
+// having an empty one.
+func text(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 type DirectiveLocation string
 
 const (
@@ -45,7 +55,7 @@ const (
 
 type InputValue struct {
 	Name         string
-	Description  string
+	Description  *string
 	Type         Type
 	DefaultValue *string
 }
@@ -56,9 +66,9 @@ func (s *introspection) registerInputValue(b *lightning.Builder) {
 
 type EnumValue struct {
 	Name              string
-	Description       string
+	Description       *string
 	IsDeprecated      bool
-	DeprecationReason string
+	DeprecationReason *string
 }
 
 func (s *introspection) registerEnumValue(b *lightning.Builder) {
@@ -67,7 +77,7 @@ func (s *introspection) registerEnumValue(b *lightning.Builder) {
 
 type Directive struct {
 	Name        string
-	Description string
+	Description *string
 	Locations   []DirectiveLocation
 	Args        []InputValue
 }
@@ -78,7 +88,7 @@ func (s *introspection) registerDirective(b *lightning.Builder) {
 
 type Schema struct {
 	Types            []Type
-	QueryType        *Type
+	QueryType        Type
 	MutationType     *Type
 	SubscriptionType *Type
 	Directives       []Directive
@@ -93,7 +103,7 @@ type Type struct {
 }
 
 var IncludeDirective = Directive{
-	Description: "Directs the executor to include this field or fragment only when the `if` argument is true.",
+	Description: text("Directs the executor to include this field or fragment only when the `if` argument is true."),
 	Locations: []DirectiveLocation{
 		FIELD,
 		FRAGMENT_SPREAD,
@@ -104,13 +114,13 @@ var IncludeDirective = Directive{
 		InputValue{
 			Name:        "if",
 			Type:        Type{Inner: &graphql.NonNull{Type: &graphql.Scalar{Type: "Boolean"}}},
-			Description: "Included when true.",
+			Description: text("Included when true."),
 		},
 	},
 }
 
 var SkipDirective = Directive{
-	Description: "Directs the executor to skip this field or fragment only when the `if` argument is true.",
+	Description: text("Directs the executor to skip this field or fragment only when the `if` argument is true."),
 	Locations: []DirectiveLocation{
 		FIELD,
 		FRAGMENT_SPREAD,
@@ -121,13 +131,13 @@ var SkipDirective = Directive{
 		InputValue{
 			Name:        "if",
 			Type:        Type{Inner: &graphql.NonNull{Type: &graphql.Scalar{Type: "Boolean"}}},
-			Description: "Skipped when true.",
+			Description: text("Skipped when true."),
 		},
 	},
 }
 
 var DeprecatedDirective = Directive{
-	Description: "Marks an element of a GraphQL schema as no longer supported.",
+	Description: text("Marks an element of a GraphQL schema as no longer supported."),
 	Locations: []DirectiveLocation{
 		FIELD_DEFINITION,
 		ENUM_VALUE,
@@ -137,7 +147,7 @@ var DeprecatedDirective = Directive{
 		{
 			Name:        "reason",
 			Type:        Type{Inner: &graphql.Scalar{Type: "String"}},
-			Description: "Explains why this element was deprecated.",
+			Description: text("Explains why this element was deprecated."),
 		},
 	},
 }
@@ -186,28 +196,31 @@ func (s *introspection) registerType(b *lightning.Builder) {
 		}
 	})
 
-	object.Attr("description", func(t *Type) string {
+	object.Attr("description", func(t *Type) *string {
 		switch t := t.Inner.(type) {
 		case *graphql.Object:
-			return t.Description
+			return text(t.Description)
 		case *graphql.Interface:
-			return t.Description
+			return text(t.Description)
 		case *graphql.Union:
-			return t.Description
+			return text(t.Description)
 		case *graphql.Scalar:
-			return t.Description
+			return text(t.Description)
 		case *graphql.Enum:
-			return t.Description
+			return text(t.Description)
 		case *graphql.InputObject:
-			return t.Description
+			return text(t.Description)
 		default:
-			return ""
+			return nil
 		}
 	})
 
-	object.Attr("interfaces", func(t *Type) []Type {
+	object.Attr("interfaces", func(t *Type) *[]Type {
 		object, ok := t.Inner.(*graphql.Object)
 		if !ok {
+			// The specification types this as a nullable list, and null is what
+			// it means: a scalar does not have an empty set of interfaces, it
+			// has no answer to the question.
 			return nil
 		}
 		types := make([]Type, 0, len(object.Interfaces))
@@ -215,10 +228,10 @@ func (s *introspection) registerType(b *lightning.Builder) {
 			types = append(types, Type{Inner: iface})
 		}
 		sortTypes(types)
-		return types
+		return &types
 	})
 
-	object.Attr("possibleTypes", func(t *Type) []Type {
+	object.Attr("possibleTypes", func(t *Type) *[]Type {
 		var objects map[string]*graphql.Object
 		switch t := t.Inner.(type) {
 		case *graphql.Union:
@@ -234,28 +247,29 @@ func (s *introspection) registerType(b *lightning.Builder) {
 			types = append(types, Type{Inner: typ})
 		}
 		sortTypes(types)
-		return types
+		return &types
 	})
 
-	object.Attr("inputFields", func(t *Type) []InputValue {
-		var fields []InputValue
+	object.Attr("inputFields", func(t *Type) *[]InputValue {
+		input, ok := t.Inner.(*graphql.InputObject)
+		if !ok {
+			return nil
+		}
 
-		switch t := t.Inner.(type) {
-		case *graphql.InputObject:
-			for name, f := range t.InputFields {
-				fields = append(fields, InputValue{
-					Name:        name,
-					Description: t.FieldDescriptions[name],
-					Type:        Type{Inner: f},
-				})
-			}
+		fields := make([]InputValue, 0, len(input.InputFields))
+		for name, f := range input.InputFields {
+			fields = append(fields, InputValue{
+				Name:        name,
+				Description: text(input.FieldDescriptions[name]),
+				Type:        Type{Inner: f},
+			})
 		}
 
 		sort.Slice(fields, func(i, j int) bool { return fields[i].Name < fields[j].Name })
-		return fields
+		return &fields
 	})
 
-	object.FieldArgs("fields", func(_ context.Context, t *Type, args includeDeprecatedArgs) ([]field, error) {
+	object.FieldArgs("fields", func(_ context.Context, t *Type, args includeDeprecatedArgs) (*[]field, error) {
 		var source map[string]*graphql.Field
 		switch t := t.Inner.(type) {
 		case *graphql.Object:
@@ -268,17 +282,17 @@ func (s *introspection) registerType(b *lightning.Builder) {
 
 		includeDeprecated := args.IncludeDeprecated != nil && *args.IncludeDeprecated
 
-		var fields []field
+		fields := make([]field, 0, len(source))
 		for name, f := range source {
 			if f.DeprecationReason != "" && !includeDeprecated {
 				continue
 			}
 
-			var args []InputValue
+			args := make([]InputValue, 0, len(f.Args))
 			for argName, a := range f.Args {
 				args = append(args, InputValue{
 					Name:        argName,
-					Description: f.ArgDescriptions[argName],
+					Description: text(f.ArgDescriptions[argName]),
 					Type:        Type{Inner: a},
 				})
 			}
@@ -286,16 +300,16 @@ func (s *introspection) registerType(b *lightning.Builder) {
 
 			fields = append(fields, field{
 				Name:              name,
-				Description:       f.Description,
+				Description:       text(f.Description),
 				Type:              Type{Inner: f.Type},
 				Args:              args,
 				IsDeprecated:      f.DeprecationReason != "",
-				DeprecationReason: f.DeprecationReason,
+				DeprecationReason: text(f.DeprecationReason),
 			})
 		}
 		sort.Slice(fields, func(i, j int) bool { return fields[i].Name < fields[j].Name })
 
-		return fields, nil
+		return &fields, nil
 	})
 
 	object.Attr("ofType", func(t *Type) *Type {
@@ -309,7 +323,7 @@ func (s *introspection) registerType(b *lightning.Builder) {
 		}
 	})
 
-	object.FieldArgs("enumValues", func(_ context.Context, t *Type, args includeDeprecatedArgs) ([]EnumValue, error) {
+	object.FieldArgs("enumValues", func(_ context.Context, t *Type, args includeDeprecatedArgs) (*[]EnumValue, error) {
 		enum, ok := t.Inner.(*graphql.Enum)
 		if !ok {
 			return nil, nil
@@ -317,7 +331,7 @@ func (s *introspection) registerType(b *lightning.Builder) {
 
 		includeDeprecated := args.IncludeDeprecated != nil && *args.IncludeDeprecated
 
-		var enumVals []EnumValue
+		enumVals := make([]EnumValue, 0, len(enum.Values))
 		for _, name := range enum.Values {
 			reason := enum.DeprecationReasons[name]
 			if reason != "" && !includeDeprecated {
@@ -325,13 +339,13 @@ func (s *introspection) registerType(b *lightning.Builder) {
 			}
 			enumVals = append(enumVals, EnumValue{
 				Name:              name,
-				Description:       enum.Descriptions[name],
+				Description:       text(enum.Descriptions[name]),
 				IsDeprecated:      reason != "",
-				DeprecationReason: reason,
+				DeprecationReason: text(reason),
 			})
 		}
 		sort.Slice(enumVals, func(i, j int) bool { return enumVals[i].Name < enumVals[j].Name })
-		return enumVals, nil
+		return &enumVals, nil
 	})
 }
 
@@ -348,11 +362,11 @@ type includeDeprecatedArgs struct {
 
 type field struct {
 	Name              string
-	Description       string
+	Description       *string
 	Args              []InputValue
 	Type              Type
 	IsDeprecated      bool
-	DeprecationReason string
+	DeprecationReason *string
 }
 
 func (s *introspection) registerField(b *lightning.Builder) {
@@ -444,7 +458,7 @@ func (s *introspection) registerQuery(b *lightning.Builder) {
 
 		schema := &Schema{
 			Types:        types,
-			QueryType:    &Type{Inner: s.query},
+			QueryType:    Type{Inner: s.query},
 			MutationType: &Type{Inner: s.mutation},
 			Directives: []Directive{
 				IncludeDirective,

@@ -253,3 +253,36 @@ func printSchema(t *testing.T, schema *graphql.Schema) string {
 	require.NoError(t, err)
 	return sdl
 }
+
+// TestNullableListsResolveToNull covers the shape a pointer to a slice
+// describes: a list that can itself be absent.
+//
+// The executor used to assume every list source was a slice, so a *[]T reached
+// it as a pointer and it panicked trying to take the length of one.
+func TestNullableListsResolveToNull(t *testing.T) {
+	b := lightning.New()
+	lightning.Object[Task](b)
+
+	query := b.Query()
+	query.Field("maybeTitles", func(ctx context.Context, _ *lightning.Root) (*[]string, error) {
+		return nil, nil
+	})
+	query.Field("titles", func(ctx context.Context, _ *lightning.Root) (*[]string, error) {
+		titles := []string{"one", "two"}
+		return &titles, nil
+	})
+	query.Field("maybeTasks", func(ctx context.Context, _ *lightning.Root) (*[]*Task, error) {
+		return nil, nil
+	})
+
+	schema := b.MustBuild()
+
+	sdl := printSchema(t, schema)
+	require.Contains(t, sdl, "maybeTitles: [String!]\n")
+	require.Contains(t, sdl, "maybeTasks: [Task]\n")
+
+	got := run(t, schema, `{ maybeTitles titles maybeTasks { title } }`)
+	require.Nil(t, got["maybeTitles"])
+	require.Equal(t, []any{"one", "two"}, got["titles"])
+	require.Nil(t, got["maybeTasks"])
+}
