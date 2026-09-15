@@ -307,3 +307,52 @@ func TestReservedFieldNamesAreRejected(t *testing.T) {
 		})
 	}
 }
+
+// Timestamps is embedded in another struct, so its fields are promoted onto it
+// the way Go promotes them.
+type Timestamps struct {
+	CreatedBy string
+	Revision  int32
+}
+
+// Recorded embeds Timestamps after a field of its own, so a promoted field's
+// index inside Timestamps is not its index inside Recorded.
+type Recorded struct {
+	lightning.Meta `graphql:"Recorded"`
+
+	Name string
+	Timestamps
+	Note string
+}
+
+// TestEmbeddedFieldsArePromoted checks that an embedded struct's fields appear
+// on the outer type and resolve to the right values.
+//
+// They used to be read by their index inside the embedded struct, applied to
+// the outer struct — so `createdBy`, field 0 of Timestamps, returned whatever
+// happened to be field 0 of Recorded.
+func TestEmbeddedFieldsArePromoted(t *testing.T) {
+	b := lightning.New()
+	lightning.Object[Recorded](b)
+	b.Query().Field("recorded", func(ctx context.Context, _ *lightning.Root) (*Recorded, error) {
+		return &Recorded{
+			Name:       "the name",
+			Timestamps: Timestamps{CreatedBy: "ada", Revision: 7},
+			Note:       "the note",
+		}, nil
+	})
+
+	schema := b.MustBuild()
+
+	sdl := printSchema(t, schema)
+	require.Contains(t, sdl, "createdBy: String!")
+	require.Contains(t, sdl, "revision: Int!")
+
+	got := run(t, schema, `{ recorded { name createdBy revision note } }`)
+	require.Equal(t, map[string]any{
+		"name":      "the name",
+		"createdBy": "ada",
+		"revision":  float64(7),
+		"note":      "the note",
+	}, got["recorded"])
+}

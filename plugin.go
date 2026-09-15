@@ -2,6 +2,7 @@ package lightning
 
 import (
 	"reflect"
+	"sort"
 
 	"github.com/hiett/lightning/graphql"
 )
@@ -136,14 +137,21 @@ func (d DeclaredType) Members() []DeclaredType {
 	return out
 }
 
-// HasField reports whether the type already declares a field of this name.
+// HasField reports whether the type will have a field of this name, whether it
+// was declared or comes from a struct field.
 func (d DeclaredType) HasField(name string) bool {
-	for _, field := range d.decl.fields {
-		if field.name == name {
-			return true
-		}
+	return d.b.fieldNames(d.decl)[name]
+}
+
+// FieldNames returns every field name the type will have, in schema order.
+func (d DeclaredType) FieldNames() []string {
+	names := d.b.fieldNames(d.decl)
+	out := make([]string, 0, len(names))
+	for name := range names {
+		out = append(out, name)
 	}
-	return false
+	sort.Strings(out)
+	return out
 }
 
 // SortableFields names the fields a paginated list over this type may be

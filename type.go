@@ -197,13 +197,20 @@ func (b *Builder) buildObject(decl *typeDecl) (graphql.Type, error) {
 	// finds it rather than recursing.
 	b.built[decl] = object
 
+	// A struct's own fields are turned into declarations rather than built
+	// directly, so that there is one path a field can take: one place the name
+	// is checked, one place a plugin is shown it, one place it is recorded as
+	// sortable.
+	fields := decl.fields
 	if decl.exposeAll {
-		if err := b.exposeStructFields(decl, decl.goType, object); err != nil {
+		exposed, err := b.structFields(decl, decl.goType, nil)
+		if err != nil {
 			return nil, err
 		}
+		fields = append(exposed, fields...)
 	}
 
-	for _, field := range decl.fields {
+	for _, field := range fields {
 		if err := checkFieldName(decl.name, field.name); err != nil {
 			return nil, err
 		}
@@ -234,14 +241,21 @@ func (b *Builder) buildObject(decl *typeDecl) (graphql.Type, error) {
 	return object, nil
 }
 
-// exposeStructFields turns a struct's own exported fields into GraphQL fields.
+// structFields turns a struct's own exported fields into field declarations.
 //
 // This is the reason a plain data type needs no declarations: the struct is
-// already a complete description of itself.
-// The declaration whose sortable and filterable fields are being collected is
-// passed separately from the struct being walked, because an embedded struct
-// contributes its fields to the type that embeds it.
-func (b *Builder) exposeStructFields(decl *typeDecl, goType reflect.Type, object *graphql.Object) error {
+// already a complete description of itself. They become declarations rather
+// than finished fields so that every field takes one path — one place the name
+// is checked, one place a plugin is shown it, one place it is recorded as
+// sortable.
+//
+// The declaration the fields belong to is passed separately from the struct
+// being walked, because an embedded struct contributes its fields to the type
+// that embeds it, and `at` is the index path from the outer struct to the one
+// being walked — which is how a promoted field is read.
+func (b *Builder) structFields(decl *typeDecl, goType reflect.Type, at []int) ([]*fieldDecl, error) {
+	var out []*fieldDecl
+
 	for i := 0; i < goType.NumField(); i++ {
 		field := goType.Field(i)
 
@@ -258,47 +272,38 @@ func (b *Builder) exposeStructFields(decl *typeDecl, goType reflect.Type, object
 
 		docs, err := readFieldDocs(field)
 		if err != nil {
-			return fmt.Errorf("%s: %w", decl.name, err)
+			return nil, fmt.Errorf("%s: %w", decl.name, err)
 		}
 		if docs.skip {
 			continue
 		}
 
+		path := append(append([]int(nil), at...), i)
+
 		// An embedded struct contributes its fields to the outer type, as Go
-		// promotes them.
+		// promotes them, and each is read through the path that reaches it.
 		_, named := field.Tag.Lookup("graphql")
 		if field.Anonymous && field.Type.Kind() == reflect.Struct && !named {
 			inner := b.declare(field.Type, kindObject)
 			inner.exposeAll = true
-			if err := b.exposeStructFields(decl, inner.goType, object); err != nil {
-				return err
+			promoted, err := b.structFields(decl, inner.goType, path)
+			if err != nil {
+				return nil, err
 			}
+			out = append(out, promoted...)
 			continue
 		}
 
-		fieldType, err := b.graphQLType(field.Type, fmt.Sprintf("%s.%s", decl.name, docs.name))
-		if err != nil {
-			return err
-		}
-
-		if err := checkFieldName(decl.name, docs.name); err != nil {
-			return err
-		}
-
-		if docs.sortable {
-			decl.sortable = append(decl.sortable, docs.name)
-		}
-		if docs.filterable {
-			decl.filterable = append(decl.filterable, docs.name)
-		}
-
-		index := i
-		object.Fields[docs.name] = &graphql.Field{
-			Type:              fieldType,
-			Description:       docs.description,
-			DeprecationReason: docs.deprecated,
-			ParseArguments:    noArguments,
-			Resolve: func(ctx ctxAlias, source, _ any, _ *graphql.SelectionSet) (any, error) {
+		out = append(out, &fieldDecl{
+			name:        docs.name,
+			description: docs.description,
+			deprecated:  docs.deprecated,
+			goResult:    field.Type,
+			sortable:    docs.sortable,
+			filterable:  docs.filterable,
+			source:      fmt.Sprintf("%s.%s", typeName(goType), field.Name),
+			meta:        map[string]any{},
+			resolve: func(ctx ctxAlias, source, _ any, _ *graphql.SelectionSet) (any, error) {
 				value := reflect.ValueOf(source)
 				for value.Kind() == reflect.Ptr {
 					if value.IsNil() {
@@ -306,11 +311,34 @@ func (b *Builder) exposeStructFields(decl *typeDecl, goType reflect.Type, object
 					}
 					value = value.Elem()
 				}
-				return value.Field(index).Interface(), nil
+				return value.FieldByIndex(path).Interface(), nil
 			},
+		})
+	}
+
+	return out, nil
+}
+
+// fieldNames returns every field name the type will have, from its declarations
+// and from the struct fields it exposes.
+//
+// A plugin asking whether a type already has a field needs both: the answer
+// "no" followed by a collision at build time is worse than no answer at all.
+func (b *Builder) fieldNames(decl *typeDecl) map[string]bool {
+	names := make(map[string]bool, len(decl.fields))
+	for _, field := range decl.fields {
+		names[field.name] = true
+	}
+	if decl.exposeAll && decl.goType != nil && decl.goType.Kind() == reflect.Struct {
+		exposed, err := b.structFields(decl, decl.goType, nil)
+		if err != nil {
+			return names
+		}
+		for _, field := range exposed {
+			names[field.name] = true
 		}
 	}
-	return nil
+	return names
 }
 
 // executorFieldNames are the names the executor answers itself, whatever a type

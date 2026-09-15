@@ -473,6 +473,16 @@ func TestNodeSchemaShape(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// Identified has an id of its own, which is the field being a node would add.
+type Identified struct {
+	lightning.Meta `graphql:"Identified"`
+
+	Id   string
+	Name string
+}
+
+func (i *Identified) NodeID() string { return i.Id }
+
 // TestNodeRegistrationMistakesAreBuildErrors checks that a mistake in a node
 // registration comes back from Build rather than out of a resolver.
 func TestNodeRegistrationMistakesAreBuildErrors(t *testing.T) {
@@ -482,6 +492,16 @@ func TestNodeRegistrationMistakesAreBuildErrors(t *testing.T) {
 		task.Attr("id", func(t *Task) string { return t.Key })
 		relay.Node(b, fetchTask)
 		b.Query().Field("first", func(ctx context.Context, _ *lightning.Root) (*Task, error) { return nil, nil })
+
+		_, err := b.Build()
+		require.ErrorContains(t, err, "already declares an id field")
+	})
+
+	t.Run("an id struct field", func(t *testing.T) {
+		b := lightning.New(relay.Plugin())
+		lightning.Object[Identified](b)
+		relay.Node(b, func(ctx context.Context, id string) (*Identified, error) { return nil, nil })
+		b.Query().Field("first", func(ctx context.Context, _ *lightning.Root) (*Identified, error) { return nil, nil })
 
 		_, err := b.Build()
 		require.ErrorContains(t, err, "already declares an id field")
