@@ -172,7 +172,10 @@ func (s *sortFilter) filter(ctx context.Context, nodes []any, want Page) ([]any,
 		names = nil
 		for _, asked := range want.FilterTextFields {
 			if !contains(s.filterable, asked) {
-				return nil, fmt.Errorf("%s cannot be filtered by %q; it must be one of %s", s.node.Name, asked, quoted(s.filterable))
+				// A client error, so the message survives sanitisation: this is
+				// a mistake in the query, and the client is the only one who
+				// can fix it.
+				return nil, graphql.NewClientError("%s cannot be filtered by %q; it must be one of %s", s.node.Name, asked, quoted(s.filterable))
 			}
 			names = append(names, asked)
 		}
@@ -240,7 +243,7 @@ func (s *sortFilter) sort(ctx context.Context, nodes []any, want Page) ([]any, e
 		return nodes, nil
 	}
 	if !contains(s.sortable, *want.SortBy) {
-		return nil, fmt.Errorf("%s cannot be sorted by %q; it must be one of %s", s.node.Name, *want.SortBy, quoted(s.sortable))
+		return nil, graphql.NewClientError("%s cannot be sorted by %q; it must be one of %s", s.node.Name, *want.SortBy, quoted(s.sortable))
 	}
 
 	values, err := s.column(ctx, s.node.Fields[*want.SortBy], nodes)

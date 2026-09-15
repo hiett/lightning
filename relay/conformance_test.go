@@ -1,4 +1,4 @@
-package graphql_test
+package relay_test
 
 import (
 	"context"
@@ -6,43 +6,46 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning/relay"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+// Widget is the node a connection is built over.
 type Widget struct {
-	Key  string
+	lightning.Meta `graphql:"Widget"`
+
+	Key  string `graphql:"-"`
 	Name string
 }
 
-func connectionSchema(t *testing.T) *graphql.Schema {
+func (w *Widget) NodeID() string { return w.Key }
+
+func fetchWidget(ctx context.Context, id string) (*Widget, error) {
+	return &Widget{Key: id, Name: id}, nil
+}
+
+func widgetSchema(t *testing.T, widgets ...*Widget) *graphql.Schema {
 	t.Helper()
 
-	schema := schemabuilder.NewSchema()
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Widget](b)
+	relay.Node(b, fetchWidget)
 
-	widget := schema.Object("Widget", Widget{})
-	widget.Key("key")
-	widget.Node(
-		func(w *Widget) string { return w.Key },
-		func(ctx context.Context, id string) (*Widget, error) { return &Widget{Key: id, Name: id}, nil },
-	)
+	relay.Connection(b.Query(), "widgets", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Widget, error) {
+		return widgets, nil
+	})
 
-	query := schema.Query()
-	query.FieldFunc("widgets", func(ctx context.Context) []*Widget {
-		return []*Widget{{Key: "1", Name: "one"}, {Key: "2", Name: "two"}}
-	}, schemabuilder.Paginated)
-
-	_ = schema.Mutation()
-	return schema.MustBuild()
+	return b.MustBuild()
 }
 
 // TestConnectionConformance checks that a generated connection has the shape
 // the Relay Cursor Connections specification requires, which is what
 // relay-compiler validates against.
 func TestConnectionConformance(t *testing.T) {
-	built := connectionSchema(t)
+	built := widgetSchema(t, &Widget{Key: "1", Name: "one"}, &Widget{Key: "2", Name: "two"})
 
 	astSchema, err := graphql.ASTSchema(built)
 	require.NoError(t, err, "the generated connection must be legal SDL")
@@ -101,7 +104,7 @@ func TestConnectionConformance(t *testing.T) {
 // TestConnectionPaginationQueryValidates runs the shape of query
 // relay-compiler generates for usePaginationFragment through the validator.
 func TestConnectionPaginationQueryValidates(t *testing.T) {
-	v, err := graphql.NewValidator(connectionSchema(t))
+	v, err := graphql.NewValidator(widgetSchema(t))
 	require.NoError(t, err)
 
 	_, err = v.Parse(`
@@ -137,17 +140,10 @@ func TestConnectionPaginationQueryValidates(t *testing.T) {
 // TestConnectionEmptyPageHasNullCursors checks that an empty page reports null
 // cursors rather than empty strings, which is what the nullable types mean.
 func TestConnectionEmptyPageHasNullCursors(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	widget := schema.Object("Widget", Widget{})
-	widget.Key("key")
-	schema.Query().FieldFunc("widgets", func(ctx context.Context) []*Widget { return nil }, schemabuilder.Paginated)
-	built := schema.MustBuild()
+	got := run(t, widgetSchema(t), `{ widgets { pageInfo { startCursor endCursor hasNextPage } edges { cursor } } }`)
 
-	got, err := runNodeQuery(t, built, `{ widgets { pageInfo { startCursor endCursor hasNextPage } edges { cursor } } }`)
-	require.NoError(t, err)
-
-	widgets := got.(map[string]interface{})["widgets"].(map[string]interface{})
-	pageInfo := widgets["pageInfo"].(map[string]interface{})
+	widgets := got["widgets"].(map[string]any)
+	pageInfo := widgets["pageInfo"].(map[string]any)
 	require.Nil(t, pageInfo["startCursor"])
 	require.Nil(t, pageInfo["endCursor"])
 	require.Equal(t, false, pageInfo["hasNextPage"])
@@ -160,17 +156,23 @@ func TestConnectionEmptyPageHasNullCursors(t *testing.T) {
 // the printer reached first would otherwise win — silently, and not necessarily
 // the same one twice.
 func TestConnectionTypesAreSharedAcrossFields(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	widget := schema.Object("Widget", Widget{})
-	widget.Key("key")
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Widget](b)
+	relay.Node(b, fetchWidget)
 
-	query := schema.Query()
-	query.FieldFunc("widgets", func(ctx context.Context) []*Widget { return nil }, schemabuilder.Paginated)
-	query.FieldFunc("otherWidgets", func(ctx context.Context) []*Widget { return nil }, schemabuilder.Paginated)
+	q := b.Query()
+	relay.Connection(q, "widgets", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Widget, error) {
+		return nil, nil
+	})
+	relay.Connection(q, "otherWidgets", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Widget, error) {
+		return nil, nil
+	})
 	// A value slice, which used to generate a second "NonNullWidgetConnection".
-	query.FieldFunc("valueWidgets", func(ctx context.Context) []Widget { return nil }, schemabuilder.Paginated)
+	relay.Connection(q, "valueWidgets", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]Widget, error) {
+		return nil, nil
+	})
 
-	built := schema.MustBuild()
+	built := b.MustBuild()
 
 	queryObject := built.Query.(*graphql.Object)
 	unwrap := func(fieldName string) graphql.Type {
@@ -198,20 +200,6 @@ func TestConnectionTypesAreSharedAcrossFields(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func widgetConnectionSchema(t *testing.T) *graphql.Schema {
-	t.Helper()
-	schema := schemabuilder.NewSchema()
-	widget := schema.Object("Widget", Widget{})
-	widget.Key("key")
-	schema.Query().FieldFunc("widgets", func(ctx context.Context) []*Widget {
-		return []*Widget{
-			{Key: "1", Name: "one"}, {Key: "2", Name: "two"}, {Key: "3", Name: "three"},
-			{Key: "4", Name: "four"}, {Key: "5", Name: "five"},
-		}
-	}, schemabuilder.Paginated)
-	return schema.MustBuild()
-}
-
 func widgetCursor(key string) string {
 	return base64.StdEncoding.EncodeToString([]byte(key))
 }
@@ -224,13 +212,15 @@ func widgetCursor(key string) string {
 // and the connection claimed there was another page. A Relay client paginating
 // forward then asked for a page that came back empty, for ever.
 func TestConnectionHasNextPageWithBothCursors(t *testing.T) {
-	built := widgetConnectionSchema(t)
+	built := widgetSchema(t,
+		&Widget{Key: "1", Name: "one"}, &Widget{Key: "2", Name: "two"}, &Widget{Key: "3", Name: "three"},
+		&Widget{Key: "4", Name: "four"}, &Widget{Key: "5", Name: "five"},
+	)
 
 	hasNextPage := func(t *testing.T, args string) bool {
 		t.Helper()
-		got, err := runNodeQuery(t, built, `{ widgets(`+args+`) { pageInfo { hasNextPage } } }`)
-		require.NoError(t, err)
-		pageInfo := got.(map[string]interface{})["widgets"].(map[string]interface{})["pageInfo"].(map[string]interface{})
+		got := run(t, built, `{ widgets(`+args+`) { pageInfo { hasNextPage } } }`)
+		pageInfo := got["widgets"].(map[string]any)["pageInfo"].(map[string]any)
 		return pageInfo["hasNextPage"].(bool)
 	}
 
@@ -243,23 +233,28 @@ func TestConnectionHasNextPageWithBothCursors(t *testing.T) {
 		"widget 5 follows widget 4, so there is another page")
 }
 
-// TestConnectionFilterAndSortMisuseAreClientErrors checks that asking a
-// connection to sort or filter by something it cannot produces a usable
-// message.
+// TestConnectionSortAndFilterMisuse checks what happens when a client asks a
+// connection to order or search by something it cannot.
 //
-// Sorting by an unregistered field raised a plain Go error, which sanitises to
-// "Internal server error" and tells the client nothing. Filtering with no
-// filterable fields dropped every row and reported a total of zero, which reads
-// as "no matches" rather than "this cannot be filtered".
-func TestConnectionFilterAndSortMisuseAreClientErrors(t *testing.T) {
-	built := widgetConnectionSchema(t)
+// Where the old library answered a bad sortBy with a plain Go error, which
+// sanitises to "Internal server error" and tells a client nothing, there is now
+// nothing to get wrong: a type with no sortable field has no sortBy argument,
+// so the mistake is caught by validation before anything runs.
+func TestConnectionSortAndFilterMisuse(t *testing.T) {
+	built := widgetSchema(t, &Widget{Key: "1", Name: "one"})
 
-	_, err := runNodeQuery(t, built, `{ widgets(sortBy: "name") { totalCount } }`)
-	require.Error(t, err)
-	require.Contains(t, graphql.SanitizeError(err), `unknown sort field "name"`,
-		"the message must survive sanitisation, or the client learns nothing")
+	v, err := graphql.NewValidator(built)
+	require.NoError(t, err)
 
-	_, err = runNodeQuery(t, built, `{ widgets(filterText: "one") { totalCount } }`)
+	_, err = v.Parse(`{ widgets(sortBy: "name") { totalCount } }`, nil, "")
+	require.ErrorContains(t, err, "sortBy")
+
+	_, err = v.Parse(`{ widgets(filterText: "one") { totalCount } }`, nil, "")
+	require.ErrorContains(t, err, "filterText")
+
+	// And where a type does declare sortable fields, a name that is not one of
+	// them is a client error whose message survives sanitisation.
+	_, err = runErr(t, plainNotes(t), `{ notes(sortBy: "nope") { totalCount } }`)
 	require.Error(t, err)
-	require.Contains(t, graphql.SanitizeError(err), "no filterable fields")
+	require.Contains(t, graphql.SanitizeError(err), `Note cannot be sorted by "nope"`)
 }
