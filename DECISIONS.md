@@ -582,3 +582,334 @@ The end-to-end test needs a running server, so it is a separate `npm run e2e` ra
 Building it turned up one real gap in the example: `@appendNode` needs the connection's Relay id,
 and `__id` has to be selected explicitly on a `@connection` field to get it. Without it the add
 button silently did nothing.
+
+---
+
+# The authoring API refactor
+
+Everything from D24 on concerns the second refactor: replacing the schema-authoring layer with the
+generics-based API in the root `lightning` package. The runtime — executor, validator, SDL printer,
+introspection, reactive live queries, the diff protocol — is unchanged except where a decision below
+says otherwise.
+
+The two tests every choice was settled by, in order:
+
+1. **The programmer writes as little as possible.**
+2. **What they do write lives next to the thing it describes.**
+
+## D24. Go 1.27 generic methods are the enabling constraint
+
+`go.mod` declares `go 1.27.0`, and the API depends on a feature that arrived with it:
+
+```go
+func (t *Type[T]) Field[R any](name string, resolve func(ctx context.Context, parent *T) (R, error)) *Field
+```
+
+A **generic method** is what lets the result type be inferred from the resolver. Without it, `R`
+would have to be a parameter of `Type`, which would mean one handle per field type, or the call site
+would have to name it. Both were prototyped and both read worse than the old library.
+
+This was verified on the installed toolchain before anything was designed around it, because the
+whole shape of the API turns on it.
+
+## D25. The Go type is the ref
+
+Pothos needs `type: PostRef` at every call site because TypeScript has no runtime types. Go does, so
+the GraphQL type is looked up from the resolver's Go return type:
+
+```go
+task.Field("owner", store.Owner)   // store.Owner returns (Actor, error); that names the type
+```
+
+There is no type argument anywhere in the public API's ordinary path, and no registry key to keep in
+step with a Go type. The registry is `map[reflect.Type]*typeDecl`, and a resolver returning a type
+that is not in it is a build error naming the type and the declaration that would fix it.
+
+The one escape hatch, `RawFieldArgs`, is for plugins and is documented as such: a field whose type is
+generated (`TaskConnection`) has no Go counterpart to read the type off.
+
+## D26. Nullability is derived from the Go type, at every level
+
+| Go | GraphQL |
+|---|---|
+| `string` | `String!` |
+| `*string` | `String` |
+| `[]string` | `[String!]!` |
+| `[]*string` | `[String]!` |
+| `*[]string` | `[String!]` |
+| `*Task` | `Task` |
+| `Task` | `Task!` |
+| `Actor` (a Go interface) | `Actor` |
+
+An interface value is nullable for the same reason a pointer is: it can be nil, and a resolver
+returning `(Actor, error)` is able to return nothing.
+
+This deletes `NonNullable`, `ListEntryNonNullable` and every other nullability option, and with them
+the old library's bug where `[]*string` silently became `[String!]!`. `.NonNull()` and `.Nullable()`
+survive as overrides and are documented as rarely right: when the Go type is wrong, changing the Go
+type says the same thing to every reader rather than to one field.
+
+## D27. Struct tags carry documentation, and `lightning.Meta` carries the type's own
+
+```go
+type Task struct {
+    lightning.Meta `graphql:"Task" description:"A unit of work."`
+
+    Key   string `graphql:"-"`
+    Title string `description:"What needs doing." sortable:"true" filterable:"true"`
+    Notes *string `description:"Anything else." deprecated:"Use comments."`
+}
+```
+
+The vocabulary is `graphql`, `description`, `deprecated`, `default`, `sortable`, `filterable`. A tag
+key that looks like one of these but is not — `describe:`, `desc:`, `doc:`, `sort:` — is a build
+error naming the field and the key that was meant, because a misspelled documentation tag documents
+nothing and says so nowhere.
+
+One marker type serves objects, inputs and argument structs: what it carries, a name and a
+description, is the same for all three.
+
+## D28. A GraphQL interface is a Go interface, and membership is a witness function
+
+```go
+type Actor interface{ DisplayName() string }
+
+actor := lightning.Interface[Actor](b)
+lightning.Implements(actor, user, func(u *User) Actor { return u })
+```
+
+The witness is the point: `func(u *User) Actor { return u }` compiles only if `*User` satisfies
+`Actor`, so membership is checked by the compiler and the error names the missing method. A resolver
+returns the interface value, and the concrete Go type behind it decides `__typename`.
+
+This deletes the marker struct and its one-hot invariant — `&Actor{User: u}`, valid only if exactly
+one embedded pointer is set — along with every runtime check that existed to police it. An invalid
+value is now unrepresentable.
+
+Membership is **explicit** rather than inferred from which Go types happen to satisfy the interface.
+Satisfying an interface by accident is ordinary Go; joining a GraphQL interface by accident is not.
+
+## D29. A member inherits an interface field it does not declare
+
+The old library refused a schema where an implementing type did not itself provide every interface
+field. That made sense when the interface had no resolvers of its own. Here it does: an interface
+field's resolver takes the interface value, which every member satisfies by construction.
+
+So a member that declares the field must agree about its type — a mismatch is a build error naming
+both types and the field — and a member that does not simply inherits it. Declaring a field once, on
+the interface, is the reason for declaring it there.
+
+## D30. Arguments are an ordinary Go struct
+
+```go
+type AddTaskArgs struct {
+    Title   string        `description:"What needs doing."`
+    OwnerID relay.GID     `graphql:"ownerId" description:"Who it belongs to."`
+    Limit   *int32        `description:"How many to return." default:"20"`
+}
+```
+
+`A` is inferred from the resolver and never named at a call site. A pointer field is optional, a
+value field is required, and a `default` makes a value field optional too.
+
+**`ArgDescription` is deleted.** It matched an unchecked string against a reflection-mangled name and
+documented nothing at all when the two disagreed — which is the exact failure the second test above
+exists to prevent.
+
+Field-name derivation is acronym-aware: `OwnerID` → `ownerId`, `ID` → `id`, `HTTPServer` →
+`httpServer`, `UserURL` → `userUrl`. The old `OwnerID` → `ownerID` was a surprise that a client only
+found at runtime.
+
+Nested structs reached through an argument are declared as input objects automatically, named after
+the Go type. The old `_InputObject` suffix is gone: it named nothing a client could see the reason
+for.
+
+## D31. The plugin seam is a set of small optional interfaces
+
+`Plugin` is a name. Beyond it, a plugin implements only what it needs: `InstallPlugin`,
+`FieldPlugin`, `BeforeBuildPlugin`, `AfterBuildPlugin`. A capability added later does not break the
+plugins that came before it.
+
+The seam is enforced by the package system, not by convention: `relay` lives in its own package and
+imports only the core's exported API. Everything it does, anything else can do. When relay needed
+something the seam did not offer — a key field, arguments computed at build time — the seam grew a
+public method rather than relay reaching inside.
+
+The one thing that moved *out* of the core for this: the text search behind `filterText` now lives in
+`relay`, because searching text is a property of this plugin's connections rather than of the schema
+builder.
+
+## D32. Relay is a plugin, and node identifiers are the cursor keys
+
+`graphql/schemabuilder/pagination.go` was 1,640 lines and `node.go` 546, inside a package that should
+not have known what Relay is. Both are now `lightning/relay`, which the core is unaware of.
+
+Registering a node type takes one line beyond declaring it:
+
+```go
+relay.Node(b, store.Task)   // uses (*Task).NodeID()
+```
+
+and that one line now supplies **three** things it used to take three declarations to say: the `id`
+field, the cursor key for every connection over the type, and the `__key` the live-query diff lines
+list elements up by. `Key("key")` is gone, and with it the requirement that the key be an exposed
+field — which is why `example/`'s `Task` no longer publishes `key: String!` alongside `id`.
+
+Cursors stay **key-based and insertion-stable**: a cursor names the item it points at, so inserting
+earlier in the list does not move it. In a library whose headline feature is live queries over
+changing lists, an offset cursor would be wrong in a way it would not be elsewhere.
+
+## D33. `__key` is emitted only for the live-query diff
+
+`__key` is the diff protocol's correlation token: with it, moving an item in a list is a reorder, and
+without it a delete and an insert of everything after. It is not part of the schema and no client
+asked for it, so emitting it on every response was noise on every response.
+
+It is now opt-in — `graphql.WithKeys(ctx)` — and the diff protocol's rerunner is what opts in. A
+plain HTTP response carries the client's selection set and nothing else.
+
+## D34. Batching is index-aligned slices, and there is no second implementation
+
+```go
+task.Batch("owner", func(ctx context.Context, tasks []*Task) ([]*User, error) { ... })
+task.Load("owner", func(t *Task) string { return t.OwnerID }, store.UsersByID)
+```
+
+`Batch` hands the resolver every parent and takes one result per parent, in order — the contract the
+executor already had, and the one every loader library uses. `R` is the type of one result, so the
+Go type still says everything about the field. Returning the wrong number of results is reported by
+name rather than silently misaligning the response.
+
+`Load` is the case batching is nearly always for: read a key off each parent, fetch the distinct
+keys once, hand each answer back to everyone who wanted it. Three tasks with the same owner cost one
+lookup, and the deduplication is not the caller's problem.
+
+This replaces `map[batch.Index]*T` in and `map[batch.Index]R` out. The old shape existed so a
+resolver could return fewer results than it was given; an index-aligned slice says the same thing
+with a nil.
+
+**There is no `BatchFieldFuncWithFallback`.** A batch field's single-parent path is derived from the
+batch resolver by calling it with one parent, so `UseBatch(func(ctx) bool)` switches between one call
+with N parents and N calls with one — both correct, with nothing written twice and nothing that can
+drift apart. The old API required a second function and then compared the two signatures at build
+time to check they agreed.
+
+`Field.Split` replaces `NumParallelInvocationsFunc`, unchanged in meaning.
+
+## D35. Sortable and filterable are declared on the field, and the arguments follow
+
+Whether a task's title can be searched is a fact about the title, so it is written on the title:
+
+```go
+Title string `description:"What needs doing." sortable:"true" filterable:"true"`
+```
+
+or, for a computed field, `.Sortable()` and `.Filterable()`.
+
+A connection over a type with nothing sortable **has no `sortBy` argument**. This is the fix for the
+old library, where every connection advertised `sortBy`, `sortOrder`, `filterText`,
+`filterTextFields` and `filterType` whether or not anything was registered to use them, and silently
+did nothing when a client used them — which is how `example/`'s `tasks` field came to advertise five
+arguments that did nothing at all.
+
+It also deletes nine near-identical option constructors — `FilterField`, `BatchFilterField`,
+`BatchFilterFieldWithFallback`, `SortField`, `BatchSortField`, `BatchSortFieldWithFallback` and the
+rest — each a closure factory that panicked on a duplicate name. A sortable field is an ordinary
+declared field, so it is batched if it batches and expensive if it is expensive, with nothing extra
+to say.
+
+`filterType`, `FilterFunc` and the custom tokenizers are **dropped**. They were extension points with
+no consumers, and the matching behaviour they defaulted to is now fixed and documented: terms split
+on whitespace, a quoted run is one term, matching is case-insensitive on a substring, and any term
+matching any searchable field keeps the row. Something else is a plugin's job.
+
+A sortable or filterable field may take no arguments — there is no selection for a sort to read them
+from — and that is a build error rather than a runtime surprise. A filterable field must resolve to
+a string.
+
+## D36. `pageInfo.pages` is kept
+
+It is not part of the Relay specification and a Relay client ignores it, but it is what
+page-number pagination needs, and it costs one field. The first entry is the empty cursor, meaning
+the start of the list, exactly as before.
+
+## D37. A resolver that pages itself says so, and is believed
+
+```go
+relay.ManualConnection(q, "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, relay.PageResult, error) {
+    rows, total, more := store.PageTasks(ctx, p)
+    return rows, relay.PageResult{TotalCount: total, HasNextPage: more}, nil
+})
+```
+
+The resolver is given the page the client asked for — including the sort and filter arguments, so it
+can push them down to the database — and returns exactly the items in it. The plugin adds cursors
+and nothing else: it does not narrow, order or trim what came back.
+
+This replaces embedding `PaginationArgs` in the argument struct and returning `PaginationInfo`
+alongside, a shape that was valid only in one combination and was checked for at build time.
+`PostProcessOptions` is dropped: a manual connection is manual, and a resolver that wants the plugin
+to do the work should use `Connection`.
+
+## D38. A text-marshalling type is converted at resolve time
+
+A Go type that implements `encoding.TextMarshaler` is a `String`, and the conversion happens in the
+field's resolver rather than in the JSON encoder. A type that fails to marshal now reports a GraphQL
+error naming the field, instead of failing halfway through writing a response that has already
+started.
+
+A nil pointer to such a type is `null`. The old code returned `""`, which is a different value.
+
+## D39. An ordinary field is not `External`
+
+`graphql.Field.External` schedules a field as a potentially-blocking call. The old builder set it on
+every resolver it registered, so a plain accessor cost a work unit and a goroutine.
+
+Only a batch field is external now — a batch resolver is an external call by definition — and only an
+expensive field is split per source. A query over a list of objects whose fields are accessors runs
+in a single work unit.
+
+## D40. A pointer to an enum is an enum
+
+`func() *Status` produced a plain number in the old builder while `func() Status` produced the
+enum's name, so the same value came back two different ways depending on which field asked. Both are
+now the enum.
+
+## D41. `graphql/schemabuilder` is deleted, and its tests were rewritten rather than translated
+
+Two authoring APIs is a permanent tax on every future change, and there are no consumers. The
+package is gone, along with the dead federation surface it carried: `FetchObjectFromKeys`,
+`RootObjectType`, `ShadowObjectType`, `ServiceName`, `NewSchemaWithName`, `buildFederatedFunction`,
+`buildShadowObjectFederationFunction` and `graphql.Field.FederatedKey`. All are recoverable from git
+history.
+
+Around 9,500 lines of test exercised it. Where a test was about the **runtime** — directives,
+errors, the executor, scalars, transports, introspection — it was ported line for line and its
+expectations were only changed where a decision above changed the answer. Where it was about the
+**old authoring API** — union marker validation, one-hot invariants, `map[batch.Index]` signatures,
+per-connection filter registration — the behaviour it tested no longer exists, and the test was
+replaced by one covering the new API's equivalent. `graphql/connection_test.go` was 2,253 lines of
+the second kind; what survives of it is in `relay/`.
+
+The connection conformance tests, which `PLAN.md` §3 names as the contract, were ported unchanged in
+meaning and pass.
+
+## D42. Every change to the example's exported schema
+
+`example/schema.graphql` is the wire contract a client compiles against. Against the pre-refactor
+file, every line that changed:
+
+- **Added descriptions**, on `PageInfo` and its fields, on connection and edge fields, on `id`, on
+  `Task.added`, and on every connection argument. Documentation, not contract.
+- **`filterType: String` removed** from the `tasks` arguments. The custom filter functions it
+  selected are gone (D35); nothing in the example registered one, so the argument did nothing.
+- **`key: String!` removed** from `Task`. Cursors come from the node identifier (D32), so a key no
+  longer has to be an exposed field. It was documented as "use `id` for anything a client stores".
+- **`status: TaskStatus!` and `enum TaskStatus` added.** The example gained an enum, so that the
+  example exercises one.
+- **`sortBy`, `sortOrder`, `filterText` and `filterTextFields` now work.** They are the same
+  arguments with the same types, but they appear because `Task.title` and friends declare themselves
+  sortable and filterable, and a client using one gets the behaviour it asks for rather than silence.
+
+Nothing else differs: no type, field, argument or nullability change beyond those five. relay-compiler
+compiles the app's nine documents clean against it and the end-to-end tests pass unchanged.
