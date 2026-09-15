@@ -223,6 +223,10 @@ type fieldDecl struct {
 	// meta carries per-field plugin data.
 	meta map[string]any
 
+	// typeOf computes the field's GraphQL type at build time, for a plugin
+	// whose generated type has no Go counterpart to read it from.
+	typeOf func(*Builder) (graphql.Type, error)
+
 	// built is a ready-made runtime field, for a plugin that assembles one
 	// rather than declaring it from a Go resolver.
 	built *graphql.Field

@@ -241,3 +241,144 @@ func TestUndeclaredNodeTypeSaysSo(t *testing.T) {
 	require.Contains(t, err.Error(), "Task")
 	require.Contains(t, err.Error(), "lightning.Object")
 }
+
+// TestConnection covers the Relay connection shape and its pagination.
+func TestConnection(t *testing.T) {
+	all := []*Task{
+		{Key: "t1", Title: "one"}, {Key: "t2", Title: "two"}, {Key: "t3", Title: "three"},
+		{Key: "t4", Title: "four"}, {Key: "t5", Title: "five"},
+	}
+
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Task](b)
+	relay.Node(b, fetchTask)
+
+	relay.Connection(b.Query(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
+		return all, nil
+	}).Describe("Every task, oldest first.")
+
+	schema := b.MustBuild()
+
+	sdl, err := graphql.PrintSchema(schema)
+	require.NoError(t, err)
+	require.Contains(t, sdl, "type TaskConnection {")
+	require.Contains(t, sdl, "type TaskEdge {")
+	require.Contains(t, sdl, "node: Task!")
+	require.Contains(t, sdl, "cursor: String!")
+	require.Contains(t, sdl, "hasPreviousPage: Boolean!")
+	require.Contains(t, sdl, "startCursor: String\n")
+	require.NotContains(t, sdl, "hasPrevPage")
+
+	got := run(t, schema, `{
+		tasks(first: 2) {
+			totalCount
+			edges { cursor node { title } }
+			pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
+		}
+	}`)
+
+	conn := got["tasks"].(map[string]any)
+	require.Equal(t, "5", conn["totalCount"])
+
+	edges := conn["edges"].([]any)
+	require.Len(t, edges, 2)
+	require.Equal(t, map[string]any{"title": "one"}, edges[0].(map[string]any)["node"])
+
+	info := conn["pageInfo"].(map[string]any)
+	require.Equal(t, true, info["hasNextPage"])
+	require.Equal(t, false, info["hasPreviousPage"])
+	require.NotEmpty(t, info["endCursor"])
+}
+
+// TestCursorsAreInsertionStable is the property that matters for a live-query
+// library: a cursor names the item it points at, so inserting earlier in the
+// list does not move it.
+func TestCursorsAreInsertionStable(t *testing.T) {
+	all := []*Task{{Key: "t1", Title: "one"}, {Key: "t2", Title: "two"}, {Key: "t3", Title: "three"}}
+
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Task](b)
+	relay.Node(b, fetchTask)
+	relay.Connection(b.Query(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
+		return all, nil
+	})
+	schema := b.MustBuild()
+
+	// Take a cursor pointing at the second item.
+	got := run(t, schema, `{ tasks(first: 3) { edges { cursor node { title } } } }`)
+	edges := got["tasks"].(map[string]any)["edges"].([]any)
+	secondCursor := edges[1].(map[string]any)["cursor"].(string)
+
+	// Insert an item at the front, as a live query's underlying data might.
+	all = append([]*Task{{Key: "t0", Title: "zero"}}, all...)
+
+	// The cursor still points at "two", not at whatever is now in slot 1.
+	got = run(t, schema, fmt.Sprintf(`{ tasks(after: %q, first: 1) { edges { node { title } } } }`, secondCursor))
+	edges = got["tasks"].(map[string]any)["edges"].([]any)
+	require.Len(t, edges, 1)
+	require.Equal(t, map[string]any{"title": "three"}, edges[0].(map[string]any)["node"],
+		"an offset cursor would have shifted; a key-based one does not")
+}
+
+// TestConnectionWithArguments checks a connection that takes its own arguments
+// alongside the pagination ones.
+func TestConnectionWithArguments(t *testing.T) {
+	all := []*Task{
+		{Key: "t1", Title: "one", Done: true},
+		{Key: "t2", Title: "two"},
+		{Key: "t3", Title: "three", Done: true},
+	}
+
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Task](b)
+	relay.Node(b, fetchTask)
+
+	relay.ConnectionArgs(b.Query(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page, args struct {
+		Done *bool `description:"Only tasks in this state."`
+	}) ([]*Task, error) {
+		if args.Done == nil {
+			return all, nil
+		}
+		var out []*Task
+		for _, task := range all {
+			if task.Done == *args.Done {
+				out = append(out, task)
+			}
+		}
+		return out, nil
+	})
+
+	schema := b.MustBuild()
+
+	sdl, err := graphql.PrintSchema(schema)
+	require.NoError(t, err)
+	require.Contains(t, sdl, "Only tasks in this state.")
+	require.Contains(t, sdl, "done: Boolean")
+	require.Contains(t, sdl, "first: Int")
+
+	got := run(t, schema, `{ tasks(done: true, first: 10) { totalCount edges { node { title } } } }`)
+	conn := got["tasks"].(map[string]any)
+	require.Equal(t, "2", conn["totalCount"])
+	require.Len(t, conn["edges"], 2)
+}
+
+// TestEmptyConnectionHasNullCursors checks the nullability of an empty page.
+func TestEmptyConnectionHasNullCursors(t *testing.T) {
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Task](b)
+	relay.Node(b, fetchTask)
+	relay.Connection(b.Query(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
+		return nil, nil
+	})
+	schema := b.MustBuild()
+
+	got := run(t, schema, `{ tasks { totalCount edges { cursor } pageInfo { startCursor endCursor hasNextPage } } }`)
+	conn := got["tasks"].(map[string]any)
+	require.Equal(t, "0", conn["totalCount"])
+	require.Empty(t, conn["edges"])
+
+	info := conn["pageInfo"].(map[string]any)
+	require.Nil(t, info["startCursor"])
+	require.Nil(t, info["endCursor"])
+	require.Equal(t, false, info["hasNextPage"])
+}

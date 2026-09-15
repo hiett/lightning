@@ -256,7 +256,15 @@ func (b *Builder) buildField(parent *typeDecl, decl *fieldDecl) (*graphql.Field,
 		return decl.built, nil
 	}
 
-	fieldType, err := b.graphQLType(decl.goResult, at)
+	var fieldType graphql.Type
+	var err error
+	if decl.typeOf != nil {
+		// A plugin computes its own type, for a generated one that no Go
+		// signature describes.
+		fieldType, err = decl.typeOf(b)
+	} else {
+		fieldType, err = b.graphQLType(decl.goResult, at)
+	}
 	if err != nil {
 		return nil, err
 	}

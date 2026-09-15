@@ -83,6 +83,11 @@ type Relay struct {
 	// identifier carries.
 	byName map[string]*nodeType
 
+	// connectionTypes caches the generated Connection type per element type, so
+	// two connections over the same type are one type rather than two that
+	// happen to agree.
+	connectionTypes map[string]graphql.Type
+
 	b *lightning.Builder
 }
 
