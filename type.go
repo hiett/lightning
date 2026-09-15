@@ -1,6 +1,7 @@
 package lightning
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -303,7 +304,7 @@ func (b *Builder) structFields(decl *typeDecl, goType reflect.Type, at []int) ([
 			filterable:  docs.filterable,
 			source:      fmt.Sprintf("%s.%s", typeName(goType), field.Name),
 			meta:        map[string]any{},
-			resolve: func(ctx ctxAlias, source, _ any, _ *graphql.SelectionSet) (any, error) {
+			resolve: func(ctx context.Context, source, _ any, _ *graphql.SelectionSet) (any, error) {
 				value := reflect.ValueOf(source)
 				for value.Kind() == reflect.Ptr {
 					if value.IsNil() {

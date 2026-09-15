@@ -38,10 +38,6 @@ import (
 	"github.com/hiett/lightning/graphql"
 )
 
-// ctxAlias exists so gotype.go can name context.Context without importing it
-// under a different name.
-type ctxAlias = context.Context
-
 // Builder accumulates type declarations and turns them into a schema.
 //
 // Declaration and construction are separate passes, which is what lets two
@@ -253,9 +249,9 @@ type fieldDecl struct {
 	// that turning batching off needs no second implementation.
 	batchResolve graphql.BatchResolver
 	// useBatch decides per request whether to batch. Nil means always.
-	useBatch func(ctxAlias) bool
+	useBatch func(context.Context) bool
 	// split says how many ways to divide the field's work across goroutines.
-	split func(ctxAlias, int) int
+	split func(context.Context, int) int
 
 	// built is a ready-made runtime field, for a plugin that assembles one
 	// rather than declaring it from a Go resolver.

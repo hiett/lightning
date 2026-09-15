@@ -1,6 +1,7 @@
 package lightning
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
@@ -67,13 +68,13 @@ func (a *AbstractType[I]) GraphQLName() string { return a.decl.name }
 //
 // Every member must provide a field of this name and type, which is checked
 // when the schema is built.
-func (a *AbstractType[I]) Field[R any](name string, resolve func(ctx ctxAlias, parent I) (R, error)) *Field {
+func (a *AbstractType[I]) Field[R any](name string, resolve func(ctx context.Context, parent I) (R, error)) *Field {
 	decl := &fieldDecl{
 		name:     name,
 		goResult: reflect.TypeFor[R](),
 		source:   callSite(2),
 		meta:     map[string]any{},
-		resolve: func(ctx ctxAlias, source, _ any, _ *graphql.SelectionSet) (any, error) {
+		resolve: func(ctx context.Context, source, _ any, _ *graphql.SelectionSet) (any, error) {
 			parent, ok := source.(I)
 			if !ok {
 				return nil, nil
@@ -91,7 +92,7 @@ func (a *AbstractType[I]) Field[R any](name string, resolve func(ctx ctxAlias, p
 // though it is free to read them into a struct of its own. Each member parses
 // what a client sent for itself, so two members may disagree about the Go type
 // behind an argument without disagreeing about the schema.
-func (a *AbstractType[I]) FieldArgs[R, A any](name string, resolve func(ctx ctxAlias, parent I, args A) (R, error)) *Field {
+func (a *AbstractType[I]) FieldArgs[R, A any](name string, resolve func(ctx context.Context, parent I, args A) (R, error)) *Field {
 	argsType := reflect.TypeFor[A]()
 	decl := &fieldDecl{
 		name:     name,
@@ -99,7 +100,7 @@ func (a *AbstractType[I]) FieldArgs[R, A any](name string, resolve func(ctx ctxA
 		goArgs:   argsType,
 		source:   callSite(2),
 		meta:     map[string]any{},
-		resolve: func(ctx ctxAlias, source, args any, _ *graphql.SelectionSet) (any, error) {
+		resolve: func(ctx context.Context, source, args any, _ *graphql.SelectionSet) (any, error) {
 			parent, ok := source.(I)
 			if !ok {
 				return nil, nil

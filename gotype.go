@@ -1,6 +1,7 @@
 package lightning
 
 import (
+	"context"
 	"encoding"
 	"fmt"
 	"reflect"
@@ -29,7 +30,7 @@ var (
 	textMarshalerType   = reflect.TypeOf((*encoding.TextMarshaler)(nil)).Elem()
 	textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
 	errorType           = reflect.TypeOf((*error)(nil)).Elem()
-	contextType         = reflect.TypeOf((*ctxAlias)(nil)).Elem()
+	contextType         = reflect.TypeOf((*context.Context)(nil)).Elem()
 	bytesType           = reflect.TypeOf([]byte(nil))
 )
 

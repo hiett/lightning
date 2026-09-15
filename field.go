@@ -1,6 +1,7 @@
 package lightning
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -34,8 +35,8 @@ import (
 // An existing method of the right shape can be passed directly:
 //
 //	user.Field("manager", store.Manager)
-func (t *Type[T]) Field[R any](name string, resolve func(ctx ctxAlias, parent *T) (R, error)) *Field {
-	return t.declareField(name, reflect.TypeFor[R](), nil, func(ctx ctxAlias, source, _ any, _ *graphql.SelectionSet) (any, error) {
+func (t *Type[T]) Field[R any](name string, resolve func(ctx context.Context, parent *T) (R, error)) *Field {
+	return t.declareField(name, reflect.TypeFor[R](), nil, func(ctx context.Context, source, _ any, _ *graphql.SelectionSet) (any, error) {
 		parent, ok := sourceAs[T](source)
 		if !ok {
 			return nil, nil
@@ -51,7 +52,7 @@ func (t *Type[T]) Field[R any](name string, resolve func(ctx ctxAlias, parent *T
 //
 //	user.Attr("displayName", func(u *User) string { return u.Name })
 func (t *Type[T]) Attr[R any](name string, resolve func(parent *T) R) *Field {
-	return t.declareField(name, reflect.TypeFor[R](), nil, func(_ ctxAlias, source, _ any, _ *graphql.SelectionSet) (any, error) {
+	return t.declareField(name, reflect.TypeFor[R](), nil, func(_ context.Context, source, _ any, _ *graphql.SelectionSet) (any, error) {
 		parent, ok := sourceAs[T](source)
 		if !ok {
 			return nil, nil
@@ -76,9 +77,9 @@ func (t *Type[T]) Attr[R any](name string, resolve func(parent *T) R) *Field {
 //	})
 //
 // A pointer field is an optional argument; a value field is required.
-func (t *Type[T]) FieldArgs[R, A any](name string, resolve func(ctx ctxAlias, parent *T, args A) (R, error)) *Field {
+func (t *Type[T]) FieldArgs[R, A any](name string, resolve func(ctx context.Context, parent *T, args A) (R, error)) *Field {
 	argsType := reflect.TypeFor[A]()
-	return t.declareField(name, reflect.TypeFor[R](), argsType, func(ctx ctxAlias, source, args any, _ *graphql.SelectionSet) (any, error) {
+	return t.declareField(name, reflect.TypeFor[R](), argsType, func(ctx context.Context, source, args any, _ *graphql.SelectionSet) (any, error) {
 		parent, ok := sourceAs[T](source)
 		if !ok {
 			return nil, nil
@@ -232,7 +233,7 @@ func (f *Field) Expensive() *Field {
 //
 // It is a tuning knob, not part of the schema: the answer is the same either
 // way, and only the shape of the work changes.
-func (f *Field) Split(into func(ctx ctxAlias, parents int) int) *Field {
+func (f *Field) Split(into func(ctx context.Context, parents int) int) *Field {
 	f.decl.split = into
 	return f
 }

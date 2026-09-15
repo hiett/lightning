@@ -1,6 +1,7 @@
 package lightning
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
@@ -33,8 +34,8 @@ import (
 // nullable User, []User gives User!, exactly as Field does.
 //
 // The resolver must return one result per parent, in the same order.
-func (t *Type[T]) Batch[R any](name string, resolve func(ctx ctxAlias, parents []*T) ([]R, error)) *Field {
-	return t.declareBatch(name, reflect.TypeFor[R](), nil, func(ctx ctxAlias, parents []*T, _ any) ([]R, error) {
+func (t *Type[T]) Batch[R any](name string, resolve func(ctx context.Context, parents []*T) ([]R, error)) *Field {
+	return t.declareBatch(name, reflect.TypeFor[R](), nil, func(ctx context.Context, parents []*T, _ any) ([]R, error) {
 		return resolve(ctx, parents)
 	})
 }
@@ -43,9 +44,9 @@ func (t *Type[T]) Batch[R any](name string, resolve func(ctx ctxAlias, parents [
 //
 // The arguments are the same for every parent in the batch: they came from one
 // selection in the query, which is the same selection for every parent.
-func (t *Type[T]) BatchArgs[R, A any](name string, resolve func(ctx ctxAlias, parents []*T, args A) ([]R, error)) *Field {
+func (t *Type[T]) BatchArgs[R, A any](name string, resolve func(ctx context.Context, parents []*T, args A) ([]R, error)) *Field {
 	argsType := reflect.TypeFor[A]()
-	return t.declareBatch(name, reflect.TypeFor[R](), argsType, func(ctx ctxAlias, parents []*T, raw any) ([]R, error) {
+	return t.declareBatch(name, reflect.TypeFor[R](), argsType, func(ctx context.Context, parents []*T, raw any) ([]R, error) {
 		args, ok := raw.(A)
 		if !ok {
 			return nil, fmt.Errorf("%s: arguments are %T, expected %s", name, raw, typeName(argsType))
@@ -67,8 +68,8 @@ func (t *Type[T]) BatchArgs[R, A any](name string, resolve func(ctx ctxAlias, pa
 // distributed, and the field's type comes from what load returns.
 //
 // load must return one result per key, in the same order.
-func (t *Type[T]) Load[K comparable, R any](name string, key func(parent *T) K, load func(ctx ctxAlias, keys []K) ([]R, error)) *Field {
-	return t.declareBatch(name, reflect.TypeFor[R](), nil, func(ctx ctxAlias, parents []*T, _ any) ([]R, error) {
+func (t *Type[T]) Load[K comparable, R any](name string, key func(parent *T) K, load func(ctx context.Context, keys []K) ([]R, error)) *Field {
+	return t.declareBatch(name, reflect.TypeFor[R](), nil, func(ctx context.Context, parents []*T, _ any) ([]R, error) {
 		keys := make([]K, 0, len(parents))
 		at := make([]int, len(parents))
 		seen := make(map[K]int, len(parents))
@@ -105,7 +106,7 @@ func (t *Type[T]) Load[K comparable, R any](name string, key func(parent *T) K, 
 // to write twice and nothing that can drift apart: a batch of one is a batch.
 // It is the switch to reach for when batching is being rolled out, or when a
 // caller is known to be asking for a single value.
-func (f *Field) UseBatch(when func(ctx ctxAlias) bool) *Field {
+func (f *Field) UseBatch(when func(ctx context.Context) bool) *Field {
 	if f.decl.batchResolve == nil {
 		f.b.errorf("%s.%s: UseBatch is for a field declared with Batch, BatchArgs or Load", f.parent.name, f.decl.name)
 		return f
@@ -116,8 +117,8 @@ func (f *Field) UseBatch(when func(ctx ctxAlias) bool) *Field {
 
 // declareBatch records a batch field, deriving its single-parent resolver from
 // the batch one so that both paths are the same code.
-func (t *Type[T]) declareBatch[R any](name string, goResult, goArgs reflect.Type, resolve func(ctx ctxAlias, parents []*T, args any) ([]R, error)) *Field {
-	batch := func(ctx ctxAlias, sources []any, args any, _ *graphql.SelectionSet) ([]any, error) {
+func (t *Type[T]) declareBatch[R any](name string, goResult, goArgs reflect.Type, resolve func(ctx context.Context, parents []*T, args any) ([]R, error)) *Field {
+	batch := func(ctx context.Context, sources []any, args any, _ *graphql.SelectionSet) ([]any, error) {
 		// The executor filters nil sources out before it gets here, so every
 		// source should convert; one that does not is answered with null rather
 		// than being handed to the resolver as a zero value.
@@ -147,7 +148,7 @@ func (t *Type[T]) declareBatch[R any](name string, goResult, goArgs reflect.Type
 		return out, nil
 	}
 
-	single := func(ctx ctxAlias, source, args any, _ *graphql.SelectionSet) (any, error) {
+	single := func(ctx context.Context, source, args any, _ *graphql.SelectionSet) (any, error) {
 		parent, ok := sourceAs[T](source)
 		if !ok {
 			return nil, nil
@@ -169,4 +170,4 @@ func (t *Type[T]) declareBatch[R any](name string, goResult, goArgs reflect.Type
 
 // alwaysBatch is the default for a batch field: a field declared as batched
 // batches.
-func alwaysBatch(ctxAlias) bool { return true }
+func alwaysBatch(context.Context) bool { return true }
