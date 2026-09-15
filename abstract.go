@@ -85,6 +85,36 @@ func (a *AbstractType[I]) Field[R any](name string, resolve func(ctx ctxAlias, p
 	return &Field{b: a.b, parent: a.decl, decl: decl}
 }
 
+// FieldArgs declares an interface field that takes arguments.
+//
+// The arguments are part of the contract: a member must offer the same ones,
+// though it is free to read them into a struct of its own. Each member parses
+// what a client sent for itself, so two members may disagree about the Go type
+// behind an argument without disagreeing about the schema.
+func (a *AbstractType[I]) FieldArgs[R, A any](name string, resolve func(ctx ctxAlias, parent I, args A) (R, error)) *Field {
+	argsType := reflect.TypeFor[A]()
+	decl := &fieldDecl{
+		name:     name,
+		goResult: reflect.TypeFor[R](),
+		goArgs:   argsType,
+		source:   callSite(2),
+		meta:     map[string]any{},
+		resolve: func(ctx ctxAlias, source, args any, _ *graphql.SelectionSet) (any, error) {
+			parent, ok := source.(I)
+			if !ok {
+				return nil, nil
+			}
+			typed, ok := args.(A)
+			if !ok {
+				return nil, fmt.Errorf("%s: arguments are %T, expected %s", name, args, typeName(argsType))
+			}
+			return resolve(ctx, parent, typed)
+		},
+	}
+	a.decl.fields = append(a.decl.fields, decl)
+	return &Field{b: a.b, parent: a.decl, decl: decl}
+}
+
 // Union declares the Go interface I as a GraphQL union type.
 //
 // A union differs from an interface in having no fields of its own: a client

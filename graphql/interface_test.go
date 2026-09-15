@@ -5,61 +5,74 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal"
 	"github.com/hiett/lightning/internal/testgraphql"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+// Content is a GraphQL interface, which is to say a Go interface. Photo and
+// Article are its members because a witness function says so, not because they
+// happen to satisfy it.
+type Content interface {
+	ContentID() lightning.ID
+	Summary() string
+}
+
 type Photo struct {
-	Id      schemabuilder.ID
+	lightning.Meta `graphql:"Photo"`
+
+	Id      lightning.ID
 	Caption string
 	Width   int32
 }
 
+func (p *Photo) ContentID() lightning.ID { return p.Id }
+func (p *Photo) Summary() string         { return "photo: " + p.Caption }
+
 type Article struct {
-	Id    schemabuilder.ID
+	lightning.Meta `graphql:"Article"`
+
+	Id    lightning.ID
 	Title string
 	Body  string
 }
 
-// Content is an interface implemented by Photo and Article, declared the same
-// way a union is: a marker struct whose embedded pointers name the members.
-type Content struct {
-	schemabuilder.Interface
-
-	*Photo
-	*Article
-}
+func (a *Article) ContentID() lightning.ID { return a.Id }
+func (a *Article) Summary() string         { return "article: " + a.Title }
 
 func interfaceSchema(t *testing.T) *graphql.Schema {
 	t.Helper()
 
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
 
-	schema.Interface("Content", Content{}).
-		Fields("id", "summary").
-		Describe("Something that can appear in a feed.")
-
-	photo := schema.Object("Photo", Photo{})
-	photo.FieldFunc("summary", func(p *Photo) string { return "photo: " + p.Caption })
-
-	article := schema.Object("Article", Article{})
-	article.FieldFunc("summary", func(a *Article) string { return "article: " + a.Title })
-
-	query := schema.Query()
-	query.FieldFunc("feed", func() []*Content {
-		return []*Content{
-			{Photo: &Photo{Id: schemabuilder.NewID("p1"), Caption: "a cat", Width: 640}},
-			{Article: &Article{Id: schemabuilder.NewID("a1"), Title: "on cats", Body: "..."}},
-		}
+	content := lightning.Interface[Content](b).Describe("Something that can appear in a feed.")
+	content.Field("id", func(_ context.Context, c Content) (lightning.ID, error) {
+		return c.ContentID(), nil
 	})
-	query.FieldFunc("nothing", func() *Content { return &Content{} })
+	content.Field("summary", func(_ context.Context, c Content) (string, error) {
+		return c.Summary(), nil
+	})
 
-	_ = schema.Mutation()
-	return schema.MustBuild()
+	photo := lightning.Object[Photo](b)
+	article := lightning.Object[Article](b)
+	lightning.Implements(content, photo, func(p *Photo) Content { return p })
+	lightning.Implements(content, article, func(a *Article) Content { return a })
+
+	query := b.Query()
+	query.Field("feed", func(ctx context.Context, _ *lightning.Root) ([]Content, error) {
+		return []Content{
+			&Photo{Id: lightning.NewID("p1"), Caption: "a cat", Width: 640},
+			&Article{Id: lightning.NewID("a1"), Title: "on cats", Body: "..."},
+		}, nil
+	})
+	query.Field("nothing", func(ctx context.Context, _ *lightning.Root) (Content, error) {
+		return nil, nil
+	})
+
+	return b.MustBuild()
 }
 
 func runInterfaceQuery(t *testing.T, built *graphql.Schema, query string) interface{} {
@@ -128,8 +141,12 @@ func TestInterfaceFragmentOnTheInterface(t *testing.T) {
 	]}`), got)
 }
 
-// TestInterfaceEmptyResolvesToNull checks that an interface value carrying no
-// member is written as null rather than crashing.
+// TestInterfaceEmptyResolvesToNull checks that a nil interface value is written
+// as null rather than crashing.
+//
+// In the old library this was a marker struct with none of its member pointers
+// set, an invalid state that only a convention kept out of the schema; here it
+// is a nil interface, which is the only way to say nothing.
 func TestInterfaceEmptyResolvesToNull(t *testing.T) {
 	got := runInterfaceQuery(t, interfaceSchema(t), `{ nothing { id } }`)
 	require.Equal(t, internal.ParseJSON(`{"nothing": null}`), got)
@@ -169,39 +186,82 @@ func TestInterfaceIntrospection(t *testing.T) {
 	require.ElementsMatch(t, []string{"Photo", "Article"}, possible)
 }
 
-// TestInterfaceDefaultFieldsAreTheSharedOnes checks the default field set when
-// Fields is not called: everything all members agree on.
-func TestInterfaceDefaultFieldsAreTheSharedOnes(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Object("Photo", Photo{}).FieldFunc("summary", func(p *Photo) string { return "" })
-	schema.Object("Article", Article{}).FieldFunc("summary", func(a *Article) string { return "" })
-	schema.Query().FieldFunc("feed", func() []*Content { return nil })
-	built := schema.MustBuild()
+// Marker is an interface with no methods and no declared fields, which is what
+// the members' shared fields are for.
+type Marker interface{ isMarker() }
 
-	astSchema, err := graphql.ASTSchema(built)
+func (p *Photo) isMarker()   {}
+func (a *Article) isMarker() {}
+
+// TestInterfaceDefaultFieldsAreTheSharedOnes checks the default field set when
+// no field is declared: everything all members agree on.
+func TestInterfaceDefaultFieldsAreTheSharedOnes(t *testing.T) {
+	b := lightning.New()
+
+	marker := lightning.Interface[Marker](b)
+	photo := lightning.Object[Photo](b)
+	article := lightning.Object[Article](b)
+	lightning.Implements(marker, photo, func(p *Photo) Marker { return p })
+	lightning.Implements(marker, article, func(a *Article) Marker { return a })
+
+	b.Query().Field("feed", func(ctx context.Context, _ *lightning.Root) ([]Marker, error) {
+		return nil, nil
+	})
+
+	astSchema, err := graphql.ASTSchema(b.MustBuild())
 	require.NoError(t, err)
 
 	fieldNames := []string{}
-	for _, f := range astSchema.Types["Content"].Fields {
+	for _, f := range astSchema.Types["Marker"].Fields {
 		fieldNames = append(fieldNames, f.Name)
 	}
-	// id and summary are shared; caption/width/title/body are not.
-	require.ElementsMatch(t, []string{"id", "summary"}, fieldNames)
+	// id is shared; caption/width/title/body are not.
+	require.ElementsMatch(t, []string{"id"}, fieldNames)
 }
 
-// TestInterfaceDeclaredFieldMustBeShared checks that declaring a field no
-// implementing type provides is a schema error rather than a runtime surprise.
-func TestInterfaceDeclaredFieldMustBeShared(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Interface("Content", Content{}).Fields("caption")
-	schema.Query().FieldFunc("feed", func() []*Content { return nil })
+// TestInterfaceMembersInheritDeclaredFields checks what happens to a member
+// that does not provide an interface field of its own.
+//
+// The old library refused the schema: every implementing type had to supply the
+// field itself. Here the interface's own resolver takes the interface value, so
+// every member already satisfies it, and the member inherits it.
+func TestInterfaceMembersInheritDeclaredFields(t *testing.T) {
+	built := interfaceSchema(t)
 
-	_, err := schema.Build()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), `field "caption" must exist on every implementing type`)
+	sdl, err := graphql.PrintSchema(built)
+	require.NoError(t, err)
+	require.Contains(t, sdl, "summary: String!")
+
+	got := runInterfaceQuery(t, built, `{ feed { ... on Photo { summary } } }`)
+	require.Equal(t, internal.ParseJSON(`{"feed": [{"summary": "photo: a cat"}, {}]}`), got)
 }
 
-// TestInterfaceValidation checks that the validator, which now knows about
+// TestInterfaceFieldTypeMismatchIsReported checks the contract that is left: a
+// member may provide an interface field itself, but not with a different type.
+func TestInterfaceFieldTypeMismatchIsReported(t *testing.T) {
+	b := lightning.New()
+
+	content := lightning.Interface[Content](b)
+	content.Field("summary", func(_ context.Context, c Content) (string, error) {
+		return c.Summary(), nil
+	})
+
+	photo := lightning.Object[Photo](b)
+	photo.Attr("summary", func(p *Photo) int32 { return p.Width })
+	article := lightning.Object[Article](b)
+
+	lightning.Implements(content, photo, func(p *Photo) Content { return p })
+	lightning.Implements(content, article, func(a *Article) Content { return a })
+
+	b.Query().Field("feed", func(ctx context.Context, _ *lightning.Root) ([]Content, error) {
+		return nil, nil
+	})
+
+	_, err := b.Build()
+	require.ErrorContains(t, err, "Photo.summary is Int!, but the interface Content declares it as String!")
+}
+
+// TestInterfaceValidation checks that the validator, which knows about
 // interfaces, rejects a fragment that can never match.
 func TestInterfaceValidation(t *testing.T) {
 	v, err := graphql.NewValidator(interfaceSchema(t))
@@ -218,48 +278,59 @@ func TestInterfaceValidation(t *testing.T) {
 	require.Error(t, err, "a fragment on an unrelated type cannot be spread here")
 }
 
-// ShoutA and ShoutB implement one interface field with different Go argument
-// structs, which is what the schema builder cannot detect and the executor has
-// to cope with.
-type ShoutA struct{ Name string }
-type ShoutB struct{ Name string }
+// Shouty is an interface whose one field takes arguments. ShoutA and ShoutB
+// implement it with different Go argument structs, which is what the schema
+// cannot see and the executor has to cope with.
+type Shouty interface{ shout() }
+
+type ShoutA struct {
+	lightning.Meta `graphql:"ShoutA"`
+	Name           string
+}
+
+type ShoutB struct {
+	lightning.Meta `graphql:"ShoutB"`
+	Name           string
+}
+
+func (a *ShoutA) shout() {}
+func (b *ShoutB) shout() {}
 
 type ShoutArgsA struct{ Times int32 }
 type ShoutArgsB struct{ Times int32 }
 
-// Shouty is an interface whose one field takes arguments.
-type Shouty struct {
-	schemabuilder.Interface
-
-	*ShoutA
-	*ShoutB
-}
-
 // TestInterfaceFieldArgumentsArePerImplementation checks that a field selected
 // directly on an interface hands each implementation the arguments *it* parsed.
 //
-// Implementations agree about a field's GraphQL signature — the schema builder
-// enforces that — but nothing makes them share a Go argument struct. Parsing
-// once and reusing the result fed one implementation's struct to another's
-// resolver, which is a type error.
+// Implementations agree about a field's GraphQL signature — the schema enforces
+// that — but nothing makes them share a Go argument struct. Parsing once and
+// reusing the result fed one implementation's struct to another's resolver,
+// which is a type error.
 func TestInterfaceFieldArgumentsArePerImplementation(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Interface("Shouty", Shouty{}).Fields("shout")
+	b := lightning.New()
 
-	a := schema.Object("ShoutA", ShoutA{})
-	a.FieldFunc("shout", func(v *ShoutA, args ShoutArgsA) string {
-		return fmt.Sprintf("A%d", args.Times)
+	shouty := lightning.Interface[Shouty](b)
+	shouty.FieldArgs("shout", func(_ context.Context, s Shouty, args ShoutArgsA) (string, error) {
+		return "", nil
 	})
 
-	b := schema.Object("ShoutB", ShoutB{})
-	b.FieldFunc("shout", func(v *ShoutB, args ShoutArgsB) string {
-		return fmt.Sprintf("B%d", args.Times)
+	a := lightning.Object[ShoutA](b)
+	a.FieldArgs("shout", func(_ context.Context, v *ShoutA, args ShoutArgsA) (string, error) {
+		return fmt.Sprintf("A%d", args.Times), nil
 	})
 
-	schema.Query().FieldFunc("both", func() []*Shouty {
-		return []*Shouty{{ShoutA: &ShoutA{}}, {ShoutB: &ShoutB{}}}
+	other := lightning.Object[ShoutB](b)
+	other.FieldArgs("shout", func(_ context.Context, v *ShoutB, args ShoutArgsB) (string, error) {
+		return fmt.Sprintf("B%d", args.Times), nil
 	})
 
-	got := runInterfaceQuery(t, schema.MustBuild(), `{ both { shout(times: 3) } }`)
+	lightning.Implements(shouty, a, func(v *ShoutA) Shouty { return v })
+	lightning.Implements(shouty, other, func(v *ShoutB) Shouty { return v })
+
+	b.Query().Field("both", func(ctx context.Context, _ *lightning.Root) ([]Shouty, error) {
+		return []Shouty{&ShoutA{}, &ShoutB{}}, nil
+	})
+
+	got := runInterfaceQuery(t, b.MustBuild(), `{ both { shout(times: 3) } }`)
 	require.Equal(t, internal.ParseJSON(`{"both": [{"shout": "A3"}, {"shout": "B3"}]}`), got)
 }

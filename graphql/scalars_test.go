@@ -1,18 +1,21 @@
 package graphql_test
 
 import (
+	"context"
 	"math"
 	"strings"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal"
 	"github.com/hiett/lightning/internal/testgraphql"
 	"github.com/stretchr/testify/require"
 )
 
 type scalarBag struct {
+	lightning.Meta `graphql:"scalarBag"`
+
 	Str     string
 	Boolean bool
 	Small   int32
@@ -22,14 +25,15 @@ type scalarBag struct {
 	Unsig   uint64
 	Float   float64
 	Float32 float32
-	Ident   schemabuilder.ID
+	Ident   lightning.ID
 	Raw     []byte
 }
 
 func scalarSchema(t *testing.T) *graphql.Schema {
 	t.Helper()
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("bag", func() scalarBag {
+	b := lightning.New()
+	lightning.Object[scalarBag](b)
+	b.Query().Field("bag", func(ctx context.Context, _ *lightning.Root) (scalarBag, error) {
 		return scalarBag{
 			Str:     "hello",
 			Boolean: true,
@@ -40,12 +44,18 @@ func scalarSchema(t *testing.T) *graphql.Schema {
 			Unsig:   math.MaxUint64,
 			Float:   1.5,
 			Float32: 2.5,
-			Ident:   schemabuilder.NewID("abc"),
+			Ident:   lightning.NewID("abc"),
 			Raw:     []byte("bar"),
-		}
+		}, nil
 	})
-	return schema.MustBuild()
+	return b.MustBuild()
 }
+
+type int64Args struct{ V int64 }
+type idArgs struct{ V lightning.ID }
+type int32Args struct{ V int32 }
+type int8Args struct{ V int8 }
+type uint8Args struct{ V uint8 }
 
 // TestStandardScalarNames checks that Go types map onto the scalar names the
 // specification and every GraphQL tool expect.
@@ -109,9 +119,11 @@ func TestInt64SerialisesWithoutLoss(t *testing.T) {
 
 // TestInt64ArgumentAcceptsStringAndNumber checks the input side of Int64.
 func TestInt64ArgumentAcceptsStringAndNumber(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("echo", func(args struct{ V int64 }) int64 { return args.V })
-	built := schema.MustBuild()
+	b := lightning.New()
+	b.Query().FieldArgs("echo", func(ctx context.Context, _ *lightning.Root, args int64Args) (int64, error) {
+		return args.V, nil
+	})
+	built := b.MustBuild()
 
 	run := func(t *testing.T, literal string) (interface{}, error) {
 		t.Helper()
@@ -149,9 +161,11 @@ func TestInt64ArgumentAcceptsStringAndNumber(t *testing.T) {
 // TestIDArgument checks that an ID argument accepts both wire forms the
 // specification allows.
 func TestIDArgument(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("echo", func(args struct{ V schemabuilder.ID }) schemabuilder.ID { return args.V })
-	built := schema.MustBuild()
+	b := lightning.New()
+	b.Query().FieldArgs("echo", func(ctx context.Context, _ *lightning.Root, args idArgs) (lightning.ID, error) {
+		return args.V, nil
+	})
+	built := b.MustBuild()
 
 	run := func(literal string) interface{} {
 		q := graphql.MustParse("{ echo(v: "+literal+") }", nil)
@@ -170,11 +184,18 @@ func TestIDArgument(t *testing.T) {
 // destination, or is not an integer at all, is rejected rather than silently
 // truncated or rounded.
 func TestIntArgumentIsBounded(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("small", func(args struct{ V int32 }) int32 { return args.V })
-	schema.Query().FieldFunc("tiny", func(args struct{ V int8 }) int32 { return int32(args.V) })
-	schema.Query().FieldFunc("unsigned", func(args struct{ V uint8 }) int32 { return int32(args.V) })
-	built := schema.MustBuild()
+	b := lightning.New()
+	query := b.Query()
+	query.FieldArgs("small", func(ctx context.Context, _ *lightning.Root, args int32Args) (int32, error) {
+		return args.V, nil
+	})
+	query.FieldArgs("tiny", func(ctx context.Context, _ *lightning.Root, args int8Args) (int32, error) {
+		return int32(args.V), nil
+	})
+	query.FieldArgs("unsigned", func(ctx context.Context, _ *lightning.Root, args uint8Args) (int32, error) {
+		return int32(args.V), nil
+	})
+	built := b.MustBuild()
 
 	run := func(t *testing.T, field, literal string) (interface{}, error) {
 		t.Helper()
