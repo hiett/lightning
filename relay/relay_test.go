@@ -424,3 +424,97 @@ func runErr(t *testing.T, schema *graphql.Schema, query string) (any, error) {
 	e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
 	return e.Execute(context.Background(), schema.Query, nil, q)
 }
+
+// TestNodeFetchErrorReachesTheClient checks that a fetcher's error is reported
+// rather than swallowed into a null.
+func TestNodeFetchErrorReachesTheClient(t *testing.T) {
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Task](b)
+	relay.Node(b, func(ctx context.Context, id string) (*Task, error) {
+		return nil, fmt.Errorf("database on fire")
+	})
+	b.Query().Field("firstTask", func(ctx context.Context, _ *lightning.Root) (*Task, error) {
+		return tasks["t1"], nil
+	})
+
+	_, err := runErr(t, b.MustBuild(), fmt.Sprintf(`{ node(id: %q) { id } }`, globalID(t, "Task", "t1")))
+	require.ErrorContains(t, err, "database on fire")
+}
+
+// TestNodeMissingObjectIsNull checks that a well-formed id for an object that
+// does not exist resolves to null rather than an error.
+func TestNodeMissingObjectIsNull(t *testing.T) {
+	got := run(t, nodeSchema(t), fmt.Sprintf(`{ node(id: %q) { id } }`, globalID(t, "Task", "nope")))
+	require.Nil(t, got["node"])
+}
+
+// TestNodeSchemaShape checks the schema a Relay client sees.
+func TestNodeSchemaShape(t *testing.T) {
+	built := nodeSchema(t)
+
+	sdl, err := graphql.PrintSchema(built)
+	require.NoError(t, err)
+
+	require.Contains(t, sdl, "interface Node {\n  \"\"\"\n  A globally unique identifier.\n  \"\"\"\n  id: ID!\n}", "printed schema:\n%s", sdl)
+	require.Contains(t, sdl, "type Task implements Node {")
+	require.Contains(t, sdl, "type User implements Node {")
+	// Documented arguments are printed in the multi-line form.
+	require.Contains(t, sdl, "    id: ID!\n  ): Node\n")
+	require.Contains(t, sdl, "    ids: [ID!]!\n  ): [Node]!\n")
+
+	astSchema, err := graphql.ASTSchema(built)
+	require.NoError(t, err)
+	require.Contains(t, astSchema.Types, "Node")
+
+	// The refetch query validates, which is what relay-compiler will be doing.
+	v, err := graphql.NewValidator(built)
+	require.NoError(t, err)
+	_, err = v.Parse(`query Refetch($id: ID!) { node(id: $id) { id ... on Task { title } } }`, nil, "")
+	require.NoError(t, err)
+}
+
+// TestNodeRegistrationMistakesAreBuildErrors checks that a mistake in a node
+// registration comes back from Build rather than out of a resolver.
+func TestNodeRegistrationMistakesAreBuildErrors(t *testing.T) {
+	t.Run("an id field already declared", func(t *testing.T) {
+		b := lightning.New(relay.Plugin())
+		task := lightning.Object[Task](b)
+		task.Attr("id", func(t *Task) string { return t.Key })
+		relay.Node(b, fetchTask)
+		b.Query().Field("first", func(ctx context.Context, _ *lightning.Root) (*Task, error) { return nil, nil })
+
+		_, err := b.Build()
+		require.ErrorContains(t, err, "already declares an id field")
+	})
+
+	t.Run("the Node name taken by an object", func(t *testing.T) {
+		b := lightning.New(relay.Plugin())
+		lightning.Object[Task](b).Name("Node")
+		relay.Node(b, fetchTask)
+		b.Query().Field("first", func(ctx context.Context, _ *lightning.Root) (*Task, error) { return nil, nil })
+
+		_, err := b.Build()
+		require.ErrorContains(t, err, "reserved for the Relay Node interface")
+	})
+
+	t.Run("a nil fetcher", func(t *testing.T) {
+		b := lightning.New(relay.Plugin())
+		lightning.Object[Task](b)
+		relay.NodeFunc(b, func(t *Task) string { return t.Key }, nil)
+		b.Query().Field("first", func(ctx context.Context, _ *lightning.Root) (*Task, error) { return nil, nil })
+
+		_, err := b.Build()
+		require.ErrorContains(t, err, "needs both a local id function and a fetcher")
+	})
+
+	t.Run("registered twice", func(t *testing.T) {
+		b := lightning.New(relay.Plugin())
+		lightning.Object[Task](b)
+		relay.Node(b, fetchTask)
+		relay.Node(b, fetchTask)
+		b.Query().Field("first", func(ctx context.Context, _ *lightning.Root) (*Task, error) { return nil, nil })
+
+		_, err := b.Build()
+		require.ErrorContains(t, err, "registered twice")
+	})
+}

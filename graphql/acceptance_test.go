@@ -6,9 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
 	"github.com/hiett/lightning/graphql/introspection"
-	"github.com/hiett/lightning/graphql/schemabuilder"
+	"github.com/hiett/lightning/internal"
+	"github.com/hiett/lightning/internal/testgraphql"
+	"github.com/hiett/lightning/relay"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -18,68 +21,91 @@ import (
 // carried out against, so that a regression in any of them fails the build
 // rather than being noticed by a client.
 
+// AcceptanceNamed is the interface both object types belong to.
+type AcceptanceNamed interface{ DisplayName() string }
+
 type AcceptanceThing struct {
-	Key    string
+	lightning.Meta `graphql:"Thing"`
+
+	Key    string `graphql:"-"`
 	Name   string
 	Count  int32
 	Wide   int64
 	Ratio  float64
 	Live   bool
-	Ident  schemabuilder.ID
+	Ident  lightning.ID
 	Binary []byte
 }
 
+func (v *AcceptanceThing) NodeID() string      { return v.Key }
+func (v *AcceptanceThing) DisplayName() string { return v.Name }
+
 type AcceptanceOther struct {
-	Key   string
+	lightning.Meta `graphql:"Other"`
+
+	Key   string `graphql:"-"`
 	Name  string
 	Extra string
 }
 
-// AcceptanceNamed is an interface over the two object types.
-type AcceptanceNamed struct {
-	schemabuilder.Interface
-
-	*AcceptanceThing
-	*AcceptanceOther
-}
+func (v *AcceptanceOther) NodeID() string      { return v.Key }
+func (v *AcceptanceOther) DisplayName() string { return v.Name }
 
 func acceptanceSchema(t *testing.T) *graphql.Schema {
 	t.Helper()
 
-	builder := schemabuilder.NewSchema()
+	b := lightning.New(relay.Plugin())
 
-	builder.Interface("Named", AcceptanceNamed{}).Fields("name")
-
-	thing := builder.Object("Thing", AcceptanceThing{})
-	thing.Key("key")
-	thing.Node(
-		func(v *AcceptanceThing) string { return v.Key },
-		func(ctx context.Context, id string) (*AcceptanceThing, error) {
-			return &AcceptanceThing{Key: id, Name: "thing " + id}, nil
-		},
-	)
-
-	other := builder.Object("Other", AcceptanceOther{})
-	other.Node(
-		func(v *AcceptanceOther) string { return v.Key },
-		func(ctx context.Context, id string) (*AcceptanceOther, error) {
-			return &AcceptanceOther{Key: id, Name: "other " + id}, nil
-		},
-	)
-
-	query := builder.Query()
-	query.FieldFunc("things", func(ctx context.Context) []*AcceptanceThing {
-		return []*AcceptanceThing{{Key: "1", Name: "one"}, {Key: "2", Name: "two"}}
-	}, schemabuilder.Paginated)
-	query.FieldFunc("named", func() *AcceptanceNamed {
-		return &AcceptanceNamed{AcceptanceThing: &AcceptanceThing{Key: "1", Name: "one"}}
+	named := lightning.Interface[AcceptanceNamed](b).Name("Named")
+	named.Field("name", func(ctx context.Context, v AcceptanceNamed) (string, error) {
+		return v.DisplayName(), nil
 	})
 
-	builder.Mutation().FieldFunc("touch", func() bool { return true })
-	builder.Subscription().FieldFunc("things", func(ctx context.Context) []*AcceptanceThing { return nil },
-		schemabuilder.Paginated)
+	thing := lightning.Object[AcceptanceThing](b)
+	other := lightning.Object[AcceptanceOther](b)
+	lightning.Implements(named, thing, func(v *AcceptanceThing) AcceptanceNamed { return v })
+	lightning.Implements(named, other, func(v *AcceptanceOther) AcceptanceNamed { return v })
 
-	return builder.MustBuild()
+	relay.Node(b, func(ctx context.Context, id string) (*AcceptanceThing, error) {
+		return &AcceptanceThing{Key: id, Name: "thing " + id}, nil
+	})
+	relay.Node(b, func(ctx context.Context, id string) (*AcceptanceOther, error) {
+		return &AcceptanceOther{Key: id, Name: "other " + id}, nil
+	})
+
+	query := b.Query()
+	relay.Connection(query, "things", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*AcceptanceThing, error) {
+		return []*AcceptanceThing{{Key: "1", Name: "one"}, {Key: "2", Name: "two"}}, nil
+	})
+	query.Field("named", func(ctx context.Context, _ *lightning.Root) (AcceptanceNamed, error) {
+		return &AcceptanceThing{Key: "1", Name: "one"}, nil
+	})
+
+	b.Mutation().Field("touch", func(ctx context.Context, _ *lightning.Root) (bool, error) {
+		return true, nil
+	})
+	relay.Connection(b.Subscription(), "things", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*AcceptanceThing, error) {
+		return nil, nil
+	})
+
+	return b.MustBuild()
+}
+
+func runNodeQuery(t *testing.T, built *graphql.Schema, query string) (interface{}, error) {
+	t.Helper()
+	q, err := graphql.Parse(query, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := graphql.PrepareQuery(context.Background(), built.Query, q.SelectionSet); err != nil {
+		return nil, err
+	}
+	e := testgraphql.NewExecutorWrapper(t)
+	result, err := e.Execute(context.Background(), built.Query, nil, q)
+	if err != nil {
+		return nil, err
+	}
+	return internal.AsJSON(result), nil
 }
 
 // TestAcceptanceIntrospectionReportsBuiltinScalars checks the five scalars every
@@ -223,7 +249,7 @@ func TestAcceptanceConnectionNames(t *testing.T) {
 func TestAcceptanceNodeRoundTrip(t *testing.T) {
 	built := acceptanceSchema(t)
 
-	encoded, err := schemabuilder.Base64GlobalIDCodec{}.Encode("Thing", "abc")
+	encoded, err := relay.Base64Codec{}.Encode("Thing", "abc")
 	require.NoError(t, err)
 
 	got, err := runNodeQuery(t, built, `{ node(id: "`+encoded+`") { __typename id ... on Thing { name } } }`)
@@ -237,18 +263,18 @@ func TestAcceptanceNodeRoundTrip(t *testing.T) {
 
 // TestAcceptanceErrorsHaveMessageAndPath checks the response error shape.
 func TestAcceptanceErrorsHaveMessageAndPath(t *testing.T) {
-	builder := schemabuilder.NewSchema()
-	builder.Query().FieldFunc("rows", func() []*AcceptanceOther {
-		return []*AcceptanceOther{{Key: "ok"}, {Key: "bad"}}
-	})
-	other := builder.Object("Other", AcceptanceOther{})
-	other.FieldFunc("check", func(o *AcceptanceOther) (string, error) {
+	b := lightning.New()
+	other := lightning.Object[AcceptanceOther](b)
+	other.Field("check", func(ctx context.Context, o *AcceptanceOther) (string, error) {
 		if o.Key == "bad" {
 			return "", graphql.NewClientError("no good")
 		}
 		return "fine", nil
 	})
-	built := builder.MustBuild()
+	b.Query().Field("rows", func(ctx context.Context, _ *lightning.Root) ([]*AcceptanceOther, error) {
+		return []*AcceptanceOther{{Key: "ok"}, {Key: "bad"}}, nil
+	})
+	built := b.MustBuild()
 
 	q := graphql.MustParse(`{ rows { check } }`, nil)
 	require.NoError(t, graphql.PrepareQuery(context.Background(), built.Query, q.SelectionSet))

@@ -288,6 +288,13 @@ func (r *Relay) BeforeBuild(b *lightning.Builder) error {
 		node.name = declared.Name()
 		r.byName[node.name] = node
 
+		if node.name == "Node" {
+			return fmt.Errorf("the name Node is reserved for the Relay Node interface; give %s another name", typeName(declared.GoType()))
+		}
+		if declared.HasField("id") {
+			return fmt.Errorf("%s already declares an id field, and being a node adds one; remove it or rename it", declared.Name())
+		}
+
 		declared.AddField("id", &graphql.Field{
 			Type:           &graphql.NonNull{Type: idScalar()},
 			Description:    "A globally unique identifier, which node(id:) resolves back to this object.",
