@@ -316,3 +316,27 @@ func TestNegativePageSizeIsAClientError(t *testing.T) {
 	require.Empty(t, conn["edges"])
 	require.Equal(t, true, conn["pageInfo"].(map[string]any)["hasNextPage"])
 }
+
+// TestManualConnectionArgs covers the manual form with arguments of its own.
+func TestManualConnectionArgs(t *testing.T) {
+	type Filter struct {
+		Prefix string `description:"Only names starting with this."`
+	}
+
+	var got Filter
+
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Widget](b)
+	relay.Node(b, fetchWidget)
+	relay.ManualConnectionArgs(b.Query(), "widgets", func(ctx context.Context, _ *lightning.Root, p relay.Page, args Filter) ([]*Widget, relay.PageResult, error) {
+		got = args
+		return fiveWidgets()[:1], relay.PageResult{TotalCount: 42, HasNextPage: true}, nil
+	})
+
+	conn := run(t, b.MustBuild(), `{ widgets(prefix: "t", first: 1) { totalCount edges { node { name } } pageInfo { hasNextPage } } }`)["widgets"].(map[string]any)
+
+	require.Equal(t, "t", got.Prefix, "the resolver's own arguments reach it")
+	require.Equal(t, "42", conn["totalCount"], "the resolver's count is believed")
+	require.Len(t, conn["edges"].([]any), 1)
+	require.Equal(t, true, conn["pageInfo"].(map[string]any)["hasNextPage"])
+}

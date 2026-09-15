@@ -176,21 +176,3 @@ func typeName(t reflect.Type) string {
 	}
 	return t.String()
 }
-
-// structOf reduces a Go type to the struct or interface it ultimately refers
-// to, reporting whether it found one.
-//
-// Resolvers hand back *T, T, []*T and so on; the type a declaration is *about*
-// is what lies underneath.
-func structOf(t reflect.Type) (reflect.Type, bool) {
-	for {
-		switch t.Kind() {
-		case reflect.Ptr, reflect.Slice:
-			t = t.Elem()
-		case reflect.Struct, reflect.Interface:
-			return t, true
-		default:
-			return t, false
-		}
-	}
-}

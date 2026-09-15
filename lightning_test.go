@@ -464,3 +464,35 @@ func TestHidingAFieldThatIsNotThereIsReported(t *testing.T) {
 	_, err := b.Build()
 	require.ErrorContains(t, err, "Task has no field named done to hide")
 }
+
+// TestTypeDescriptionAndNameReachTheSchema covers the two things a type handle
+// can override about itself, for a struct whose tags are not yours to change.
+func TestTypeDescriptionAndNameReachTheSchema(t *testing.T) {
+	b := lightning.New()
+	task := lightning.Object[Task](b).Name("Chore").Describe("Something to get done.")
+	require.Equal(t, "Chore", task.GraphQLName())
+
+	b.Query().Field("chore", func(ctx context.Context, _ *lightning.Root) (*Task, error) { return nil, nil })
+
+	sdl := printSchema(t, b.MustBuild())
+	require.Contains(t, sdl, "type Chore {")
+	require.Contains(t, sdl, "Something to get done.")
+	require.NotContains(t, sdl, "type Task {")
+}
+
+// TestNullableOverridesTheGoType covers the escape hatch in the direction the
+// Go type cannot express: a value that is present in Go but may be absent in
+// the schema.
+func TestNullableOverridesTheGoType(t *testing.T) {
+	b := lightning.New()
+	lightning.Object[Task](b).
+		Attr("maybeTitle", func(t *Task) string { return t.Title }).
+		Nullable()
+	b.Query().Field("task", func(ctx context.Context, _ *lightning.Root) (*Task, error) {
+		return &Task{Title: "One"}, nil
+	})
+
+	schema := b.MustBuild()
+	require.Contains(t, printSchema(t, schema), "maybeTitle: String\n")
+	require.Equal(t, "One", run(t, schema, `{ task { maybeTitle } }`)["task"].(map[string]any)["maybeTitle"])
+}

@@ -3,6 +3,7 @@ package lightning_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
@@ -227,4 +228,133 @@ func TestAnOutputObjectCannotBeAnArgument(t *testing.T) {
 
 	_, err := b.Build()
 	require.ErrorContains(t, err, "is declared as an object type, so it cannot also be an argument")
+}
+
+// everyArgs has one argument of every scalar kind, so that each parser is
+// exercised by a real query rather than only by the types it maps to.
+type everyArgs struct {
+	Text    string
+	Flag    bool
+	Small   int32
+	Wide    int64
+	Big     uint64
+	Ratio   float64
+	Ident   lightning.ID
+	When    time.Time
+	Raw     []byte
+	Words   []string
+	Missing *string
+}
+
+// TestEveryScalarArgumentParses covers the input side of the scalar mapping.
+// The output side is checked elsewhere; this is the half a client can get
+// wrong.
+func TestEveryScalarArgumentParses(t *testing.T) {
+	b := lightning.New()
+	b.Query().FieldArgs("echo", func(ctx context.Context, _ *lightning.Root, args everyArgs) (string, error) {
+		require.Equal(t, "hello", args.Text)
+		require.Equal(t, true, args.Flag)
+		require.Equal(t, int32(-7), args.Small)
+		require.Equal(t, int64(9223372036854775807), args.Wide)
+		require.Equal(t, uint64(18446744073709551615), args.Big)
+		require.Equal(t, 1.5, args.Ratio)
+		require.Equal(t, "abc", args.Ident.Value)
+		require.Equal(t, time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC), args.When.UTC())
+		require.Equal(t, []byte("bar"), args.Raw)
+		require.Equal(t, []string{"one", "two"}, args.Words)
+		require.Nil(t, args.Missing)
+		return "ok", nil
+	})
+
+	schema := b.MustBuild()
+
+	sdl := printSchema(t, schema)
+	require.Contains(t, sdl, "when: Time!")
+	require.Contains(t, sdl, "raw: Bytes!")
+	require.Contains(t, sdl, "words: [String!]!")
+	// A pointer is the only optional one.
+	require.Contains(t, sdl, "missing: String,")
+
+	got := run(t, schema, `{
+		echo(
+			text: "hello"
+			flag: true
+			small: -7
+			wide: "9223372036854775807"
+			big: "18446744073709551615"
+			ratio: 1.5
+			ident: "abc"
+			when: "2020-01-02T03:04:05Z"
+			raw: "YmFy"
+			words: ["one", "two"]
+		)
+	}`)
+	require.Equal(t, "ok", got["echo"])
+}
+
+// TestBadScalarArgumentsAreReported checks that each parser says what was wrong
+// rather than failing obscurely.
+func TestBadScalarArgumentsAreReported(t *testing.T) {
+	type oneArg[T any] struct{ V T }
+
+	for _, tc := range []struct {
+		name   string
+		build  func(*lightning.Builder)
+		query  string
+		expect string
+	}{
+		{
+			name: "a Time that is not one",
+			build: func(b *lightning.Builder) {
+				b.Query().FieldArgs("v", func(ctx context.Context, _ *lightning.Root, a oneArg[time.Time]) (bool, error) {
+					return true, nil
+				})
+			},
+			query:  `{ v(v: "yesterday") }`,
+			expect: "not an RFC 3339 timestamp",
+		},
+		{
+			name: "Bytes that are not base64",
+			build: func(b *lightning.Builder) {
+				b.Query().FieldArgs("v", func(ctx context.Context, _ *lightning.Root, a oneArg[[]byte]) (bool, error) {
+					return true, nil
+				})
+			},
+			query:  `{ v(v: "not base64 at all!!") }`,
+			expect: "base64",
+		},
+		{
+			name: "a negative unsigned integer",
+			build: func(b *lightning.Builder) {
+				b.Query().FieldArgs("v", func(ctx context.Context, _ *lightning.Root, a oneArg[uint64]) (bool, error) {
+					return true, nil
+				})
+			},
+			query:  `{ v(v: "-1") }`,
+			expect: "Int64",
+		},
+		{
+			name: "a Float that is a word",
+			build: func(b *lightning.Builder) {
+				b.Query().FieldArgs("v", func(ctx context.Context, _ *lightning.Root, a oneArg[float64]) (bool, error) {
+					return true, nil
+				})
+			},
+			query:  `{ v(v: "half") }`,
+			expect: "expected a number",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := lightning.New()
+			tc.build(b)
+			schema := b.MustBuild()
+
+			q, err := graphql.Parse(tc.query, nil)
+			if err == nil {
+				err = graphql.PrepareQuery(context.Background(), schema.Query, q.SelectionSet)
+			}
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.expect)
+		})
+	}
 }

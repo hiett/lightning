@@ -525,10 +525,6 @@ func pageInfoType() *graphql.Object {
 	}
 }
 
-func int64AsString(source any) (any, error) {
-	return fmt.Sprintf("%d", source.(int64)), nil
-}
-
 func unwrapNonNull(t graphql.Type) graphql.Type {
 	if nn, ok := t.(*graphql.NonNull); ok {
 		return nn.Type
