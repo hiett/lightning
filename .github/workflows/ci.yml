@@ -17,7 +17,9 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          # The module needs Go 1.27 for generic methods, so CI reads the
+          # version from go.mod rather than tracking whatever is current.
+          go-version-file: go.mod
           cache: true
 
       - name: go build
@@ -80,7 +82,9 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          # The module needs Go 1.27 for generic methods, so CI reads the
+          # version from go.mod rather than tracking whatever is current.
+          go-version-file: go.mod
           cache: true
 
       - uses: actions/setup-node@v4
