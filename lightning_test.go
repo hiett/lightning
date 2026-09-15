@@ -286,3 +286,24 @@ func TestNullableListsResolveToNull(t *testing.T) {
 	require.Equal(t, []any{"one", "two"}, got["titles"])
 	require.Nil(t, got["maybeTasks"])
 }
+
+// TestReservedFieldNamesAreRejected keeps a field the executor would shadow
+// from being declared at all.
+//
+// The executor answers __typename itself and supplies __key from the type's
+// key, so a field declared under either name would never be called — which is
+// the kind of silence this API exists to prevent.
+func TestReservedFieldNamesAreRejected(t *testing.T) {
+	for _, name := range []string{"__typename", "__key"} {
+		t.Run(name, func(t *testing.T) {
+			b := lightning.New()
+			lightning.Object[Task](b).Attr(name, func(t *Task) string { return "nope" })
+			b.Query().Field("task", func(ctx context.Context, _ *lightning.Root) (*Task, error) {
+				return nil, nil
+			})
+
+			_, err := b.Build()
+			require.ErrorContains(t, err, "which is reserved")
+		})
+	}
+}

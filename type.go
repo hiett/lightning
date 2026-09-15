@@ -204,6 +204,9 @@ func (b *Builder) buildObject(decl *typeDecl) (graphql.Type, error) {
 	}
 
 	for _, field := range decl.fields {
+		if err := checkFieldName(decl.name, field.name); err != nil {
+			return nil, err
+		}
 		built, err := b.buildField(decl, field)
 		if err != nil {
 			return nil, err
@@ -278,6 +281,10 @@ func (b *Builder) exposeStructFields(decl *typeDecl, goType reflect.Type, object
 			return err
 		}
 
+		if err := checkFieldName(decl.name, docs.name); err != nil {
+			return err
+		}
+
 		if docs.sortable {
 			decl.sortable = append(decl.sortable, docs.name)
 		}
@@ -302,6 +309,22 @@ func (b *Builder) exposeStructFields(decl *typeDecl, goType reflect.Type, object
 				return value.Field(index).Interface(), nil
 			},
 		}
+	}
+	return nil
+}
+
+// executorFieldNames are the names the executor answers itself, whatever a type
+// says. A field declared under one of them would never be called, so declaring
+// one is an error rather than a silent no-op.
+var executorFieldNames = map[string]string{
+	"__typename": "the executor answers it with the concrete type's name",
+	"__key":      "the live-query diff supplies it from the type's key",
+}
+
+// checkFieldName rejects a field the executor would shadow.
+func checkFieldName(typeName, fieldName string) error {
+	if why, reserved := executorFieldNames[fieldName]; reserved {
+		return fmt.Errorf("%s declares the field %s, which is reserved: %s", typeName, fieldName, why)
 	}
 	return nil
 }

@@ -38,6 +38,10 @@ type InstallPlugin interface {
 // The field is the runtime field, so a plugin may replace its resolver. Doing
 // so should preserve the original: wrapping is composition, and several
 // plugins may wrap the same field.
+//
+// A batch field has two resolvers — Resolve for one parent and BatchResolver
+// for many — and which one runs is decided per request. A plugin that wraps one
+// must wrap the other, or its behaviour will come and go with the batching.
 type FieldPlugin interface {
 	Plugin
 	Field(b *Builder, typeName string, info FieldInfo, field *graphql.Field) error
