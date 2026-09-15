@@ -172,13 +172,13 @@ Registering it twice is the whole of it -- and it is what lets the same field be
 fetched once or watched, as the example schema does:
 
 ```go
-query.FieldFunc("tasks", func(ctx context.Context) []*Task {
+relay.Connection(b.Query(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
     return store.Tasks(ctx)
-}, schemabuilder.Paginated)
+})
 
-subscription.FieldFunc("tasks", func(ctx context.Context) []*Task {
+relay.Connection(b.Subscription(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
     return store.Tasks(ctx)
-}, schemabuilder.Paginated)
+})
 ```
 
 Nothing about the resolver makes it live. What makes it live is the dependency
