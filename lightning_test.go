@@ -231,3 +231,25 @@ func TestFieldNameSpellings(t *testing.T) {
 		require.Contains(t, sdl, want, "printed schema:\n%s", sdl)
 	}
 }
+
+// runErr executes a query and returns its error rather than failing the test,
+// for the cases that are about what goes wrong.
+func runErr(t *testing.T, schema *graphql.Schema, query string) (any, error) {
+	t.Helper()
+
+	q, err := graphql.Parse(query, nil)
+	require.NoError(t, err)
+	require.NoError(t, graphql.PrepareQuery(context.Background(), schema.Query, q.SelectionSet))
+
+	e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
+	return e.Execute(context.Background(), schema.Query, nil, q)
+}
+
+// printSchema renders a built schema as SDL.
+func printSchema(t *testing.T, schema *graphql.Schema) string {
+	t.Helper()
+
+	sdl, err := graphql.PrintSchema(schema)
+	require.NoError(t, err)
+	return sdl
+}

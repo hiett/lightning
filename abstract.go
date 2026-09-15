@@ -71,7 +71,7 @@ func (a *AbstractType[I]) Field[R any](name string, resolve func(ctx ctxAlias, p
 	decl := &fieldDecl{
 		name:     name,
 		goResult: reflect.TypeFor[R](),
-		source:   callSite(),
+		source:   callSite(2),
 		meta:     map[string]any{},
 		resolve: func(ctx ctxAlias, source, _ any, _ *graphql.SelectionSet) (any, error) {
 			parent, ok := source.(I)

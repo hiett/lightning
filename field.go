@@ -132,12 +132,19 @@ func sourceAs[T any](source any) (*T, bool) {
 
 // declareField records a field on the type.
 func (t *Type[T]) declareField(name string, goResult, goArgs reflect.Type, resolve graphql.Resolver) *Field {
+	return t.declareFieldAt(callSite(3), name, goResult, goArgs, resolve)
+}
+
+// declareFieldAt records a field whose call site has already been found, for a
+// declaration that reaches declareField through another of this package's
+// functions and so sits one frame further down.
+func (t *Type[T]) declareFieldAt(source, name string, goResult, goArgs reflect.Type, resolve graphql.Resolver) *Field {
 	decl := &fieldDecl{
 		name:     name,
 		goResult: goResult,
 		goArgs:   goArgs,
 		resolve:  resolve,
-		source:   callSite(),
+		source:   source,
 		meta:     map[string]any{},
 	}
 
@@ -149,12 +156,13 @@ func (t *Type[T]) declareField(name string, goResult, goArgs reflect.Type, resol
 	return &Field{b: t.b, parent: t.decl, decl: decl}
 }
 
-// callSite reports the file and line of the caller's caller, for error
-// messages that point at the declaration rather than at this package.
-func callSite() string {
-	// 0 is callSite, 1 is declareField, 2 is the Field/Attr/FieldArgs method,
-	// 3 is the author's code.
-	if _, file, line, ok := runtime.Caller(3); ok {
+// callSite reports the file and line skip frames up, for error messages that
+// point at the declaration rather than at this package.
+//
+// Counting from callSite itself: 1 is whatever recorded the declaration, 2 is
+// the method the author called, and 3 is the author's own code.
+func callSite(skip int) string {
+	if _, file, line, ok := runtime.Caller(skip); ok {
 		if i := strings.LastIndex(file, "/"); i >= 0 {
 			file = file[i+1:]
 		}
@@ -285,6 +293,19 @@ func (b *Builder) buildField(parent *typeDecl, decl *fieldDecl) (*graphql.Field,
 		Resolve:           decl.resolve,
 		ParseArguments:    noArguments,
 		Expensive:         decl.expensive,
+	}
+
+	if decl.batchResolve != nil {
+		field.BatchResolver = decl.batchResolve
+		field.Batch = true
+		field.UseBatchFunc = decl.useBatch
+		if field.UseBatchFunc == nil {
+			field.UseBatchFunc = alwaysBatch
+		}
+		// A batch resolver is an external call by definition, so the executor
+		// should schedule it rather than run it inline — including on the
+		// unbatched path, where the same work happens one parent at a time.
+		field.External = true
 	}
 
 	if decl.goArgs != nil {

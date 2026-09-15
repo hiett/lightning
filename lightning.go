@@ -233,6 +233,13 @@ type fieldDecl struct {
 	// whose generated type has no Go counterpart to read it from.
 	typeOf func(*Builder) (graphql.Type, error)
 
+	// batchResolve resolves the field for many parents at once. When it is set
+	// resolve is still set too, to the same function called with one parent, so
+	// that turning batching off needs no second implementation.
+	batchResolve graphql.BatchResolver
+	// useBatch decides per request whether to batch. Nil means always.
+	useBatch func(ctxAlias) bool
+
 	// built is a ready-made runtime field, for a plugin that assembles one
 	// rather than declaring it from a Go resolver.
 	built *graphql.Field
