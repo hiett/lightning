@@ -254,6 +254,8 @@ type fieldDecl struct {
 	batchResolve graphql.BatchResolver
 	// useBatch decides per request whether to batch. Nil means always.
 	useBatch func(ctxAlias) bool
+	// split says how many ways to divide the field's work across goroutines.
+	split func(ctxAlias, int) int
 
 	// built is a ready-made runtime field, for a plugin that assembles one
 	// rather than declaring it from a Go resolver.

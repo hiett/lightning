@@ -222,6 +222,21 @@ func (f *Field) Expensive() *Field {
 	return f
 }
 
+// Split says how many ways to divide this field's work when it is resolved for
+// several parents at once.
+//
+// The function is given how many parents there are and returns how many units
+// to split them into; one unit is one goroutine. It applies to a batch field
+// and to an expensive one, which are the fields the executor schedules rather
+// than running inline.
+//
+// It is a tuning knob, not part of the schema: the answer is the same either
+// way, and only the shape of the work changes.
+func (f *Field) Split(into func(ctx ctxAlias, parents int) int) *Field {
+	f.decl.split = into
+	return f
+}
+
 // Sortable says a paginated list over the parent type may be ordered by this
 // field, which is the declaration form of the `sortable:"true"` struct tag.
 func (f *Field) Sortable() *Field {
@@ -314,6 +329,10 @@ func (b *Builder) buildField(parent *typeDecl, decl *fieldDecl) (*graphql.Field,
 		Resolve:           decl.resolve,
 		ParseArguments:    noArguments,
 		Expensive:         decl.expensive,
+	}
+
+	if decl.split != nil {
+		field.NumParallelInvocationsFunc = decl.split
 	}
 
 	if decl.batchResolve != nil {

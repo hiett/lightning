@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal"
 	"github.com/hiett/lightning/internal/testgraphql"
 	"github.com/stretchr/testify/assert"
@@ -388,28 +388,32 @@ func TestSelectionType(t *testing.T) {
 
 // TODO: Verify caching and concurrency
 
+// executorObject is the element of the list the failure cases walk.
+type executorObject struct {
+	lightning.Meta `graphql:"object"`
+
+	Key string
+}
+
 func TestExecutorRuns(t *testing.T) {
-	type Object struct {
-		Key string
-	}
 	tests := []struct {
 		name           string
-		objectFunc     interface{}
-		resolverFunc   interface{}
+		objectFunc     func(context.Context, *lightning.Root) ([]*executorObject, error)
+		resolverFunc   func(context.Context, *executorObject) (string, error)
 		query          string
 		wantResultJSON string
 		wantError      string
 	}{
 		{
 			name: "fail on 3rd value",
-			objectFunc: func(ctx context.Context) []*Object {
-				return []*Object{
-					&Object{Key: "key1"},
-					&Object{Key: "key2"},
-					&Object{Key: "key3"},
-				}
+			objectFunc: func(ctx context.Context, _ *lightning.Root) ([]*executorObject, error) {
+				return []*executorObject{
+					{Key: "key1"},
+					{Key: "key2"},
+					{Key: "key3"},
+				}, nil
 			},
-			resolverFunc: func(ctx context.Context, o Object) (string, error) {
+			resolverFunc: func(ctx context.Context, o *executorObject) (string, error) {
 				if o.Key == "key3" {
 					return "", errors.New("failing on third key")
 				}
@@ -428,12 +432,11 @@ func TestExecutorRuns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			builder := schemabuilder.NewSchema()
-			builder.Query().FieldFunc("objects", tt.objectFunc)
+			b := lightning.New()
+			lightning.Object[executorObject](b).Field("value", tt.resolverFunc)
+			b.Query().Field("objects", tt.objectFunc)
 
-			obj := builder.Object("object", Object{})
-			obj.FieldFunc("value", tt.resolverFunc)
-			schema, err := builder.Build()
+			schema, err := b.Build()
 			require.NoError(t, err)
 
 			q := graphql.MustParse(tt.query, nil)

@@ -7,35 +7,47 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/hiett/lightning/batch"
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// batchObject is the object every case below resolves a "value" field on.
+type batchObject struct {
+	lightning.Meta `graphql:"Object"`
+
+	Key string
+	Num int
+}
+
+// fiveObjects and twoObjects are the lists the concurrency cases count work
+// units over.
+func twoObjects() []*batchObject {
+	return []*batchObject{{Key: "key1"}, {Key: "key2"}}
+}
+
+func fiveObjects() []*batchObject {
+	return []*batchObject{{Key: "key1"}, {Key: "key2"}, {Key: "key3"}, {Key: "key4"}, {Key: "key5"}}
+}
+
+func objectsField(b *lightning.Builder, all func() []*batchObject) {
+	b.Query().Field("objects", func(ctx context.Context, _ *lightning.Root) ([]*batchObject, error) {
+		return all(), nil
+	})
+}
+
+// TestNonExpensiveExecution counts the work units the executor schedules.
+//
+// An ordinary field is resolved inline, so it costs nothing to schedule; only
+// an expensive field or a batched one becomes a unit of its own. The old
+// library marked every registered resolver external and so scheduled all of
+// them, which is why the counts here are smaller than they used to be.
 func TestNonExpensiveExecution(t *testing.T) {
-	type Object struct {
-		Key string
-		Num int
-	}
-	type Object2 struct {
-		Key2 string
-		Num2 int
-	}
-	type UnionType struct {
-		schemabuilder.Union
-
-		*Object
-		*Object2
-	}
-
-	type enumType int32
-
 	tests := []struct {
 		name             string
-		registrationFunc func(*schemabuilder.Schema) error
+		registrationFunc func(*lightning.Builder)
 		query            string
 		wantResultJSON   string
 		wantError        string
@@ -43,13 +55,9 @@ func TestNonExpensiveExecution(t *testing.T) {
 	}{
 		{
 			name: "non-expensive run with single value",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object { return []*Object{&Object{Key: "key1"}} })
-				obj := schema.Object("Object", Object{})
-				obj.FieldFunc("value", func(object *Object) *Object {
-					return object
-				})
-				return nil
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, func() []*batchObject { return []*batchObject{{Key: "key1"}} })
+				lightning.Object[batchObject](b).Attr("value", func(o *batchObject) *batchObject { return o })
 			},
 			query: `
 			{
@@ -65,17 +73,13 @@ func TestNonExpensiveExecution(t *testing.T) {
 			{"key": "key1", "value": { "key": "key1"}}
 			]}
 			`,
-			wantRuns: 2, // Objects + Value
+			wantRuns: 1, // one unit: an ordinary field is resolved inline
 		},
 		{
 			name: "non-expensive run with multiple value",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object { return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}} })
-				obj := schema.Object("Object", Object{})
-				obj.FieldFunc("value", func(object *Object) *Object {
-					return object
-				})
-				return nil
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, twoObjects)
+				lightning.Object[batchObject](b).Attr("value", func(o *batchObject) *batchObject { return o })
 			},
 			query: `
 			{
@@ -92,17 +96,15 @@ func TestNonExpensiveExecution(t *testing.T) {
 			{"key": "key2", "value": { "key": "key2"}}
 			]}
 			`,
-			wantRuns: 2, // Objects + Value
+			wantRuns: 1, // one unit: an ordinary field is resolved inline
 		},
 		{
 			name: "expensive run with multiple value",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object { return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}} })
-				obj := schema.Object("Object", Object{})
-				obj.FieldFunc("value", func(ctx context.Context, object *Object) *Object {
-					return object
-				}, schemabuilder.Expensive)
-				return nil
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, twoObjects)
+				lightning.Object[batchObject](b).
+					Attr("value", func(o *batchObject) *batchObject { return o }).
+					Expensive()
 			},
 			query: `
 			{
@@ -123,19 +125,17 @@ func TestNonExpensiveExecution(t *testing.T) {
 		},
 		{
 			name: "batch run with extra concurrency",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object {
-					return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}, &Object{Key: "key3"}, &Object{Key: "key4"}, &Object{Key: "key5"}}
-				})
-				obj := schema.Object("Object", Object{})
-				obj.BatchFieldFunc("value", func(ctx context.Context, objectBatch map[batch.Index]*Object) map[batch.Index]*Object {
-					assert.True(t, len(objectBatch) > 0, "batch run with extra concurrency too few objects in batch")
-					return objectBatch
-				}, schemabuilder.NumParallelInvocationsFunc(func(ctx context.Context, numNodes int) int {
-					assert.Equal(t, 5, numNodes, "batch run with extra concurrency invalid number of objects")
-					return 2
-				}))
-				return nil
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, fiveObjects)
+				lightning.Object[batchObject](b).
+					Batch("value", func(ctx context.Context, parents []*batchObject) ([]*batchObject, error) {
+						assert.True(t, len(parents) > 0, "batch run with extra concurrency too few objects in batch")
+						return parents, nil
+					}).
+					Split(func(ctx context.Context, parents int) int {
+						assert.Equal(t, 5, parents, "batch run with extra concurrency invalid number of objects")
+						return 2
+					})
 			},
 			query: `
 			{
@@ -159,18 +159,16 @@ func TestNonExpensiveExecution(t *testing.T) {
 		},
 		{
 			name: "non-expensive run with extra concurrency",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object {
-					return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}, &Object{Key: "key3"}, &Object{Key: "key4"}, &Object{Key: "key5"}}
-				})
-				obj := schema.Object("Object", Object{})
-				obj.FieldFunc("value", func(ctx context.Context, object *Object) *Object {
-					return object
-				}, schemabuilder.NumParallelInvocationsFunc(func(ctx context.Context, numNodes int) int {
-					assert.Equal(t, 5, numNodes, "non-expensive run with extra concurrency invalid number of objects")
-					return 2
-				}))
-				return nil
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, fiveObjects)
+				lightning.Object[batchObject](b).
+					Batch("value", func(ctx context.Context, parents []*batchObject) ([]*batchObject, error) {
+						return parents, nil
+					}).
+					Split(func(ctx context.Context, parents int) int {
+						assert.Equal(t, 5, parents, "non-expensive run with extra concurrency invalid number of objects")
+						return 2
+					})
 			},
 			query: `
 			{
@@ -194,19 +192,17 @@ func TestNonExpensiveExecution(t *testing.T) {
 		},
 		{
 			name: "batch run with extremely high concurrency",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object {
-					return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}, &Object{Key: "key3"}, &Object{Key: "key4"}, &Object{Key: "key5"}}
-				})
-				obj := schema.Object("Object", Object{})
-				obj.BatchFieldFunc("value", func(ctx context.Context, objectBatch map[batch.Index]*Object) map[batch.Index]*Object {
-					assert.True(t, len(objectBatch) > 0, "batch run with extremely high concurrency too few objects in batch")
-					return objectBatch
-				}, schemabuilder.NumParallelInvocationsFunc(func(ctx context.Context, numNodes int) int {
-					assert.Equal(t, 5, numNodes, "batch run with extremely high concurrency invalid number of objects")
-					return 10 // Bigger number than value passed in
-				}))
-				return nil
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, fiveObjects)
+				lightning.Object[batchObject](b).
+					Batch("value", func(ctx context.Context, parents []*batchObject) ([]*batchObject, error) {
+						assert.True(t, len(parents) > 0, "batch run with extremely high concurrency too few objects in batch")
+						return parents, nil
+					}).
+					Split(func(ctx context.Context, parents int) int {
+						assert.Equal(t, 5, parents, "batch run with extremely high concurrency invalid number of objects")
+						return 10 // Bigger number than value passed in
+					})
 			},
 			query: `
 			{
@@ -230,19 +226,17 @@ func TestNonExpensiveExecution(t *testing.T) {
 		},
 		{
 			name: "batch run with zero concurrency",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object {
-					return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}, &Object{Key: "key3"}, &Object{Key: "key4"}, &Object{Key: "key5"}}
-				})
-				obj := schema.Object("Object", Object{})
-				obj.BatchFieldFunc("value", func(ctx context.Context, objectBatch map[batch.Index]*Object) map[batch.Index]*Object {
-					assert.True(t, len(objectBatch) > 0, "batch run with extremely high concurrency too few objects in batch")
-					return objectBatch
-				}, schemabuilder.NumParallelInvocationsFunc(func(ctx context.Context, numNodes int) int {
-					assert.Equal(t, 5, numNodes, "batch run with extremely high concurrency invalid number of objects")
-					return 0 // Invalid low value
-				}))
-				return nil
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, fiveObjects)
+				lightning.Object[batchObject](b).
+					Batch("value", func(ctx context.Context, parents []*batchObject) ([]*batchObject, error) {
+						assert.True(t, len(parents) > 0, "batch run with zero concurrency too few objects in batch")
+						return parents, nil
+					}).
+					Split(func(ctx context.Context, parents int) int {
+						assert.Equal(t, 5, parents, "batch run with zero concurrency invalid number of objects")
+						return 0 // Invalid low value
+					})
 			},
 			query: `
 			{
@@ -266,13 +260,9 @@ func TestNonExpensiveExecution(t *testing.T) {
 		},
 		{
 			name: "non-expensive run with deep execution",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object { return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}} })
-				obj := schema.Object("Object", Object{})
-				obj.FieldFunc("value", func(object *Object) *Object {
-					return object
-				})
-				return nil
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, twoObjects)
+				lightning.Object[batchObject](b).Attr("value", func(o *batchObject) *batchObject { return o })
 			},
 			query: `
 			{
@@ -293,17 +283,15 @@ func TestNonExpensiveExecution(t *testing.T) {
 			{"key": "key2", "value": { "value": { "value": {"key": "key2"}}}}
 			]}
 			`,
-			wantRuns: 4, // Objects + Value + Value + Value
+			wantRuns: 1, // one unit: depth costs nothing when every field is ordinary
 		},
 		{
 			name: "expensive run with deep execution",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object { return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}} })
-				obj := schema.Object("Object", Object{})
-				obj.FieldFunc("value", func(ctx context.Context, object *Object) *Object {
-					return object
-				}, schemabuilder.Expensive)
-				return nil
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, twoObjects)
+				lightning.Object[batchObject](b).
+					Attr("value", func(o *batchObject) *batchObject { return o }).
+					Expensive()
 			},
 			query: `
 			{
@@ -328,16 +316,14 @@ func TestNonExpensiveExecution(t *testing.T) {
 		},
 		{
 			name: "non-expensive error",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object { return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}} })
-				obj := schema.Object("Object", Object{})
-				obj.FieldFunc("value", func(object *Object) (*Object, error) {
-					if object.Key == "key2" {
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, twoObjects)
+				lightning.Object[batchObject](b).Field("value", func(ctx context.Context, o *batchObject) (*batchObject, error) {
+					if o.Key == "key2" {
 						return nil, errors.New("bad times")
 					}
-					return object, nil
+					return o, nil
 				})
-				return nil
 			},
 			query: `
 			{
@@ -352,16 +338,14 @@ func TestNonExpensiveExecution(t *testing.T) {
 		},
 		{
 			name: "non-expensive error first index",
-			registrationFunc: func(schema *schemabuilder.Schema) error {
-				schema.Query().FieldFunc("objects", func(ctx context.Context) []*Object { return []*Object{&Object{Key: "key1"}, &Object{Key: "key2"}} })
-				obj := schema.Object("Object", Object{})
-				obj.FieldFunc("value", func(object *Object) (*Object, error) {
-					if object.Key == "key1" {
+			registrationFunc: func(b *lightning.Builder) {
+				objectsField(b, twoObjects)
+				lightning.Object[batchObject](b).Field("value", func(ctx context.Context, o *batchObject) (*batchObject, error) {
+					if o.Key == "key1" {
 						return nil, errors.New("bad times")
 					}
-					return object, nil
+					return o, nil
 				})
-				return nil
 			},
 			query: `
 			{
@@ -378,11 +362,10 @@ func TestNonExpensiveExecution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			builder := schemabuilder.NewSchema()
+			b := lightning.New()
+			tt.registrationFunc(b)
 
-			require.NoError(t, tt.registrationFunc(builder))
-
-			schema, err := builder.Build()
+			schema, err := b.Build()
 			require.NoError(t, err)
 
 			q := graphql.MustParse(tt.query, nil)
