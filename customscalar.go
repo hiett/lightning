@@ -43,7 +43,7 @@ func ScalarAs[T any](b *Builder, name string, encode func(T) (any, error), decod
 	if b.scalars == nil {
 		b.scalars = map[reflect.Type]*scalarBinding{}
 	}
-	if existing, taken := b.scalars[goType]; taken {
+	if existing := b.scalars[goType]; existing != nil {
 		b.errorf("%s is registered as the scalar %s and again as %s", typeName(goType), existing.name, name)
 		return
 	}
@@ -81,12 +81,66 @@ func ScalarAs[T any](b *Builder, name string, encode func(T) (any, error), decod
 	}
 }
 
-// scalarBindingFor returns the custom scalar registered for a Go type.
+// ScalarBinding is how one Go type travels on the wire: the scalar it is sent
+// as, and the two functions that convert between them.
+type ScalarBinding struct {
+	// Name is the GraphQL scalar the type travels as. It may be a built-in.
+	Name string
+	// Encode turns a Go value into what a client receives.
+	Encode func(any) (any, error)
+	// Decode turns what a client sends into a Go value, reporting a bad input
+	// in terms the client can act on.
+	Decode func(any) (any, error)
+}
+
+// ScalarShapes registers a function consulted for any Go type the builder does
+// not otherwise recognise, so that a plugin can claim a whole family of types
+// rather than registering them one at a time.
+//
+// It exists for a generic type: relay's ID[T] is a different Go type for every
+// T, and nothing can enumerate the instantiations an application will use. The
+// claim function is given the Go type and returns how it travels, or nil to
+// pass.
+//
+// A type claimed this way is bound the first time it is seen, and the binding
+// is kept, so the claim function runs once per type.
+func (b *Builder) ScalarShapes(claim func(reflect.Type) *ScalarBinding) {
+	b.scalarShapes = append(b.scalarShapes, claim)
+}
+
+// scalarBindingFor returns the custom scalar registered for a Go type, asking
+// the registered shapes for one the first time a type is seen.
 func (b *Builder) scalarBindingFor(goType reflect.Type) *scalarBinding {
-	if b.scalars == nil {
-		return nil
+	if b.scalars != nil {
+		if binding, ok := b.scalars[goType]; ok {
+			return binding
+		}
 	}
-	return b.scalars[goType]
+
+	for _, claim := range b.scalarShapes {
+		claimed := claim(goType)
+		if claimed == nil {
+			continue
+		}
+		binding := &scalarBinding{
+			name:   claimed.Name,
+			encode: claimed.Encode,
+			decode: claimed.Decode,
+		}
+		if b.scalars == nil {
+			b.scalars = map[reflect.Type]*scalarBinding{}
+		}
+		b.scalars[goType] = binding
+		return binding
+	}
+
+	// Remembering the miss keeps the claim functions off the hot path for the
+	// types they do not want.
+	if b.scalars == nil {
+		b.scalars = map[reflect.Type]*scalarBinding{}
+	}
+	b.scalars[goType] = nil
+	return nil
 }
 
 // customScalarType builds the runtime type for a custom scalar.

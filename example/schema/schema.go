@@ -18,9 +18,13 @@ type AddTaskArgs struct {
 }
 
 // SetTaskDoneArgs are the arguments to the setTaskDone mutation.
+//
+// The identifier is typed, so a client that sends a user's global id where a
+// task's was asked for is told so while the query is prepared, and the resolver
+// is handed the local identifier with no decoding of its own to do.
 type SetTaskDoneArgs struct {
-	ID   relay.GID `graphql:"id" description:"The task's global id."`
-	Done bool      `description:"The new state."`
+	ID   relay.ID[Task] `graphql:"id" description:"The task's global id."`
+	Done bool           `description:"The new state."`
 }
 
 // Build assembles the example schema over a store.

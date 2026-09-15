@@ -58,6 +58,8 @@ type Builder struct {
 
 	// scalars holds Go types registered as custom scalars.
 	scalars map[reflect.Type]*scalarBinding
+	// scalarShapes are plugin-supplied claims over families of Go types.
+	scalarShapes []func(reflect.Type) *ScalarBinding
 
 	plugins []Plugin
 

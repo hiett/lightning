@@ -152,6 +152,8 @@ func (r *Relay) Install(b *lightning.Builder) error {
 	// Declared here rather than where a sorted connection is: a schema has one
 	// SortOrder however many sorted connections it has. It is printed only if
 	// something reaches it, so a schema with nothing sortable never mentions it.
+	r.claimTypedIDs(b)
+
 	lightning.Enum(b, "SortOrder", map[string]SortOrder{
 		"asc":  Ascending,
 		"desc": Descending,
