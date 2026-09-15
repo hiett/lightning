@@ -9,7 +9,6 @@ import (
 
 	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/internal/filter"
 )
 
 // This file orders and searches a connection.
@@ -162,7 +161,7 @@ func (s *sortFilter) filter(ctx context.Context, nodes []any, want Page) ([]any,
 		return nodes, nil
 	}
 
-	tokens := filter.GetDefaultSearchTokens(*want.FilterText)
+	tokens := tokenize(*want.FilterText)
 	if len(tokens) == 0 {
 		return nodes, nil
 	}
@@ -195,7 +194,7 @@ func (s *sortFilter) filter(ctx context.Context, nodes []any, want Page) ([]any,
 	kept := make([]any, 0, len(nodes))
 	for i, node := range nodes {
 		for _, column := range columns {
-			if filter.DefaultFilterFunc(column[i], tokens) {
+			if matches(column[i], tokens) {
 				kept = append(kept, node)
 				break
 			}

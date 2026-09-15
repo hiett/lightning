@@ -1,13 +1,14 @@
-package filter_test
+package relay
 
 import (
 	"testing"
 
-	"github.com/hiett/lightning/internal/filter"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDefaultMatchText(t *testing.T) {
+// TestSearchMatching pins how filterText is read: quoted runs are phrases,
+// matching is case-insensitive, and an empty quoted term matches nothing.
+func TestSearchMatching(t *testing.T) {
 	testcases := []struct {
 		String  string
 		Query   string
@@ -24,10 +25,10 @@ func TestDefaultMatchText(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		searchTokens := filter.GetDefaultSearchTokens(tc.Query)
+		searchTokens := tokenize(tc.Query)
 		assert.Equal(t,
 			tc.Matches,
-			filter.DefaultFilterFunc(tc.String, searchTokens),
+			matches(tc.String, searchTokens),
 			"expected Match(`%s`, `%s`) to be %v", tc.String, tc.Query, tc.Matches,
 		)
 	}
