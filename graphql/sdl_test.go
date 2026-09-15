@@ -1,46 +1,59 @@
 package graphql_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type SDLInner struct {
+	lightning.Meta `graphql:"SDLInner"`
+
 	Name  string
 	Count int64
 }
 
 type SDLNestedArg struct {
+	lightning.Meta `graphql:"SDLNestedArg"`
+
 	X string
 	Y *string
+}
+
+type sdlSearchArgs struct {
+	Term    string
+	Limit   *int64
+	Nested  SDLNestedArg
+	Options []string
 }
 
 func sdlTestSchema(t *testing.T) *graphql.Schema {
 	t.Helper()
 
-	schema := schemabuilder.NewSchema()
+	b := lightning.New()
+	lightning.Object[SDLInner](b)
 
-	query := schema.Query()
-	query.FieldFunc("inner", func() SDLInner { return SDLInner{} })
-	query.FieldFunc("inners", func() []*SDLInner { return nil })
-	query.FieldFunc("search", func(args struct {
-		Term    string
-		Limit   *int64
-		Nested  SDLNestedArg
-		Options []string
-	}) *SDLInner {
-		return nil
+	query := b.Query()
+	query.Field("inner", func(ctx context.Context, _ *lightning.Root) (SDLInner, error) {
+		return SDLInner{}, nil
+	})
+	query.Field("inners", func(ctx context.Context, _ *lightning.Root) ([]*SDLInner, error) {
+		return nil, nil
+	})
+	query.FieldArgs("search", func(ctx context.Context, _ *lightning.Root, args sdlSearchArgs) (*SDLInner, error) {
+		return nil, nil
 	})
 
-	mutation := schema.Mutation()
-	mutation.FieldFunc("touch", func() bool { return true })
+	b.Mutation().Field("touch", func(ctx context.Context, _ *lightning.Root) (bool, error) {
+		return true, nil
+	})
 
-	return schema.MustBuild()
+	return b.MustBuild()
 }
 
 func TestPrintSchema(t *testing.T) {
@@ -50,7 +63,7 @@ func TestPrintSchema(t *testing.T) {
 	for _, want := range []string{
 		"schema {\n  query: Query\n  mutation: Mutation\n}",
 		"type SDLInner {",
-		"input SDLNestedArg_InputObject {",
+		"input SDLNestedArg {",
 		"type Mutation {\n  touch: Boolean!\n}",
 	} {
 		require.Contains(t, sdl, want, "printed schema:\n%s", sdl)
@@ -79,12 +92,12 @@ func TestPrintSchemaRoundTrips(t *testing.T) {
 	require.NotNil(t, astSchema.Mutation)
 	require.Equal(t, "Mutation", astSchema.Mutation.Name)
 
-	for _, name := range []string{"SDLInner", "SDLNestedArg_InputObject", "Query", "Mutation"} {
+	for _, name := range []string{"SDLInner", "SDLNestedArg", "Query", "Mutation"} {
 		require.Contains(t, astSchema.Types, name, "printed schema:\n%s", sdl)
 	}
 
 	// Nullability survives: a *string field is nullable, a string field is not.
-	inner := astSchema.Types["SDLNestedArg_InputObject"]
+	inner := astSchema.Types["SDLNestedArg"]
 	require.Equal(t, "String!", fieldTypeString(t, inner, "x"))
 	require.Equal(t, "String", fieldTypeString(t, inner, "y"))
 }
@@ -96,51 +109,27 @@ func fieldTypeString(t *testing.T, def *ast.Definition, name string) string {
 	return field.Type.String()
 }
 
-// TestPrintSchemaOmitsEmptyMutation checks that schemabuilder's always-present
-// but often empty Mutation object is left out rather than printed as an illegal
-// fieldless type.
+// TestPrintSchemaOmitsEmptyMutation checks that the always-present but often
+// empty Mutation object is left out rather than printed as an illegal fieldless
+// type.
 func TestPrintSchemaOmitsEmptyMutation(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("ok", func() bool { return true })
-	_ = schema.Mutation()
+	build := func() *graphql.Schema {
+		b := lightning.New()
+		b.Query().Field("ok", func(ctx context.Context, _ *lightning.Root) (bool, error) {
+			return true, nil
+		})
+		return b.MustBuild()
+	}
 
-	sdl, err := graphql.PrintSchema(schema.MustBuild())
+	sdl, err := graphql.PrintSchema(build())
 	require.NoError(t, err)
 
 	require.NotContains(t, sdl, "mutation: Mutation")
 	require.NotContains(t, sdl, "type Mutation")
 	require.True(t, strings.Contains(sdl, "type Query {"))
 
-	_, err = graphql.ASTSchema(schema.MustBuild())
+	_, err = graphql.ASTSchema(build())
 	require.NoError(t, err)
-}
-
-type collidingPayload struct{ Totally string }
-
-// TestSchemaRejectsANameCollision checks that two different types sharing a
-// name is an error rather than a coin toss.
-//
-// A GraphQL schema has one namespace. Keeping the first type and dropping the
-// second lost every type reachable only through the loser, and which one won
-// was decided by Go map iteration — so the exported schema was wrong, silently,
-// and differently on each run. The schema builder catches the case it can see,
-// and the printer catches the rest.
-func TestSchemaRejectsANameCollision(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-
-	inner := schema.Object("SDLInner", sdlInnerSource{})
-	inner.Key("key")
-
-	// A hand-written type whose name collides with the generated edge type.
-	schema.Object("SDLInnerEdge", collidingPayload{})
-
-	query := schema.Query()
-	query.FieldFunc("inners", func() []*sdlInnerSource { return nil }, schemabuilder.Paginated)
-	query.FieldFunc("impostor", func() *collidingPayload { return nil })
-
-	_, err := schema.Build()
-	require.Error(t, err, "a generated type name colliding with a registered one must be refused")
-	require.Contains(t, err.Error(), "SDLInnerEdge")
 }
 
 // TestPrintSchemaRejectsANameCollision covers the printer's own guard, for a
@@ -174,11 +163,6 @@ func TestPrintSchemaRejectsANameCollision(t *testing.T) {
 	}
 }
 
-type sdlInnerSource struct {
-	Key  string
-	Name string
-}
-
 // TestPrintSchemaNamesAnonymousInputsDeterministically checks that an input
 // object the schema left unnamed gets the same generated name every time, and
 // that printing does not modify the schema it is printing.
@@ -188,8 +172,8 @@ type sdlInnerSource struct {
 // two concurrent prints were a data race, and the name depended on map
 // iteration order.
 //
-// schemabuilder refuses an anonymous nested argument struct outright, so this
-// is only reachable for a schema assembled by hand.
+// The schema builder names every input object after the Go type it came from,
+// so this is only reachable for a schema assembled by hand.
 func TestPrintSchemaNamesAnonymousInputsDeterministically(t *testing.T) {
 	build := func() *graphql.Schema {
 		str := &graphql.NonNull{Type: &graphql.Scalar{Type: "String"}}

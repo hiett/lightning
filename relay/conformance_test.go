@@ -258,3 +258,47 @@ func TestConnectionSortAndFilterMisuse(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, graphql.SanitizeError(err), `Note cannot be sorted by "nope"`)
 }
+
+// collidingEdge is a hand-written type whose name is the one a connection over
+// Widget generates.
+type collidingEdge struct {
+	lightning.Meta `graphql:"WidgetEdge"`
+
+	Totally string
+}
+
+// TestGeneratedNameCollisionIsReported checks that a type sharing a name with
+// one a connection generates is an error rather than a coin toss.
+//
+// A GraphQL schema has one namespace. Keeping the first type and dropping the
+// second lost every type reachable only through the loser, and which one won
+// was decided by Go map iteration — so the exported schema was wrong, silently,
+// and differently on each run.
+func TestGeneratedNameCollisionIsReported(t *testing.T) {
+	b := lightning.New(relay.Plugin())
+	lightning.Object[Widget](b)
+	lightning.Object[collidingEdge](b)
+	relay.Node(b, fetchWidget)
+
+	q := b.Query()
+	relay.Connection(q, "widgets", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Widget, error) {
+		return nil, nil
+	})
+	q.Field("impostor", func(ctx context.Context, _ *lightning.Root) (*collidingEdge, error) {
+		return nil, nil
+	})
+
+	built, err := b.Build()
+	if err != nil {
+		require.ErrorContains(t, err, "WidgetEdge")
+		return
+	}
+
+	// The builder cannot see a name a plugin generated for a type it never
+	// declared, so the printer is what catches it — and it must catch it the
+	// same way every time rather than on some runs.
+	for range 8 {
+		_, err := graphql.PrintSchema(built)
+		require.ErrorContains(t, err, "both named WidgetEdge")
+	}
+}

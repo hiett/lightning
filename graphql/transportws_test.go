@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/reactive"
 	"github.com/stretchr/testify/require"
 )
@@ -41,23 +41,29 @@ func (c *liveCounter) set(v int32) {
 	resource.Invalidate()
 }
 
+type setValueArgs struct{ Value int32 }
+
 func transportWSServer(t *testing.T) (*httptest.Server, *liveCounter) {
 	t.Helper()
 
 	state := &liveCounter{resource: reactive.NewResource()}
 
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("value", func(ctx context.Context) int32 { return state.read(ctx) })
-	schema.Mutation().FieldFunc("setValue", func(args struct{ Value int32 }) bool {
-		state.set(args.Value)
-		return true
+	b := lightning.New()
+	b.Query().Field("value", func(ctx context.Context, _ *lightning.Root) (int32, error) {
+		return state.read(ctx), nil
 	})
-	schema.Subscription().FieldFunc("value", func(ctx context.Context) int32 { return state.read(ctx) })
-	schema.Query().FieldFunc("boom", func() (string, error) {
+	b.Query().Field("boom", func(ctx context.Context, _ *lightning.Root) (string, error) {
 		return "", graphql.NewClientError("it broke")
 	})
+	b.Mutation().FieldArgs("setValue", func(ctx context.Context, _ *lightning.Root, args setValueArgs) (bool, error) {
+		state.set(args.Value)
+		return true, nil
+	})
+	b.Subscription().Field("value", func(ctx context.Context, _ *lightning.Root) (int32, error) {
+		return state.read(ctx), nil
+	})
 
-	built := schema.MustBuild()
+	built := b.MustBuild()
 
 	server := httptest.NewServer(graphql.TransportWSHandler(built,
 		graphql.WithTransportWSMinRerunInterval(0)))
@@ -268,9 +274,9 @@ func TestTransportWSDuplicateSubscriber(t *testing.T) {
 // TestTransportWSConnectionInitCallback checks that authentication can refuse a
 // connection.
 func TestTransportWSConnectionInitCallback(t *testing.T) {
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("ok", func() bool { return true })
-	built := schema.MustBuild()
+	b := lightning.New()
+	b.Query().Field("ok", func(ctx context.Context, _ *lightning.Root) (bool, error) { return true, nil })
+	built := b.MustBuild()
 
 	server := httptest.NewServer(graphql.TransportWSHandler(built,
 		graphql.WithTransportWSConnectionInit(func(ctx context.Context, payload json.RawMessage) (context.Context, error) {
@@ -306,14 +312,14 @@ func TestTransportWSConnectionInitCallback(t *testing.T) {
 func TestTransportWSConnectionInitContextReachesResolvers(t *testing.T) {
 	type userKey struct{}
 
-	schema := schemabuilder.NewSchema()
-	schema.Query().FieldFunc("whoami", func(ctx context.Context) string {
+	b := lightning.New()
+	b.Query().Field("whoami", func(ctx context.Context, _ *lightning.Root) (string, error) {
 		if name, ok := ctx.Value(userKey{}).(string); ok {
-			return name
+			return name, nil
 		}
-		return "nobody"
+		return "nobody", nil
 	})
-	built := schema.MustBuild()
+	built := b.MustBuild()
 
 	server := httptest.NewServer(graphql.TransportWSHandler(built,
 		graphql.WithTransportWSConnectionInit(func(ctx context.Context, payload json.RawMessage) (context.Context, error) {

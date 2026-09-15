@@ -1,6 +1,7 @@
 package graphql_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,19 +9,19 @@ import (
 
 	"github.com/kylelemons/godebug/pretty"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 )
 
-func testHTTPRequest(req *http.Request) *httptest.ResponseRecorder {
-	schema := schemabuilder.NewSchema()
+type mirrorArgs struct{ Value int64 }
 
-	query := schema.Query()
-	query.FieldFunc("mirror", func(args struct{ Value int64 }) int64 {
-		return args.Value * -1
+func testHTTPRequest(req *http.Request) *httptest.ResponseRecorder {
+	b := lightning.New()
+	b.Query().FieldArgs("mirror", func(ctx context.Context, _ *lightning.Root, args mirrorArgs) (int64, error) {
+		return args.Value * -1, nil
 	})
 
-	builtSchema := schema.MustBuild()
+	builtSchema := b.MustBuild()
 
 	rr := httptest.NewRecorder()
 	handler := graphql.HTTPHandler(builtSchema)
