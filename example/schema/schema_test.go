@@ -241,7 +241,8 @@ func TestExampleLiveQuery(t *testing.T) {
 
 	// And again, for a change to an existing task.
 	require.Eventually(t, func() bool {
-		tasks := store.Tasks(context.Background())
+		tasks, err := store.Tasks(context.Background())
+		require.NoError(t, err)
 		for _, task := range tasks {
 			if task.Title == "Feed the cat" {
 				_, err := store.SetTaskDone(context.Background(), task.Key, true)
@@ -276,6 +277,10 @@ func TestExampleIntrospectionWorks(t *testing.T) {
 
 // TestExampleRejectsANonGlobalID checks that a mutation given something that is
 // not a global id says so, rather than guessing.
+//
+// The check now happens while the argument is parsed, before the resolver runs,
+// because the argument's Go type is relay.GID — so every mutation taking a
+// global id gets it without writing anything.
 func TestExampleRejectsANonGlobalID(t *testing.T) {
 	_, built := newExample(t)
 
@@ -289,5 +294,5 @@ func TestExampleRejectsANonGlobalID(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	graphql.HTTPHandler(built).ServeHTTP(recorder, request)
 
-	require.Contains(t, recorder.Body.String(), "is not a global id")
+	require.Contains(t, recorder.Body.String(), "malformed global id")
 }
