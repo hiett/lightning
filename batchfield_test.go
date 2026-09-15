@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hiett/lightning"
+	"github.com/hiett/lightning/graphql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -235,4 +236,213 @@ func TestBatchErrorsReachTheCaller(t *testing.T) {
 
 	_, err := runErr(t, b.MustBuild(), `{ tasks { owner { name } } }`)
 	require.ErrorContains(t, err, "the owner store is down")
+}
+
+// The cases below run the same resolver twice — once batched, once one parent
+// at a time — because the two paths must agree. In the old library they were
+// two separate functions that had to be kept in step by hand; here there is one
+// function, and the switch only changes how often it is called.
+
+// bothWays builds a schema whose Task.probe field is declared by declare, runs
+// query against it batched and unbatched, and returns the batched result after
+// checking the two agree.
+func bothWays(t *testing.T, declare func(task *lightning.Type[Task]) *lightning.Field, query string) map[string]any {
+	t.Helper()
+
+	build := func(batched bool) *graphql.Schema {
+		b := listSchema(t, func(task *lightning.Type[Task]) {
+			field := declare(task)
+			if !batched {
+				field.UseBatch(func(ctx context.Context) bool { return false })
+			}
+		})
+		return b.MustBuild()
+	}
+
+	batched := run(t, build(true), query)
+	unbatched := run(t, build(false), query)
+	require.Equal(t, batched, unbatched, "batched and unbatched runs must agree")
+	return batched
+}
+
+// bothWaysErr is bothWays for the cases that are about what goes wrong.
+func bothWaysErr(t *testing.T, declare func(task *lightning.Type[Task]) *lightning.Field, query string) error {
+	t.Helper()
+
+	build := func(batched bool) *graphql.Schema {
+		b := listSchema(t, func(task *lightning.Type[Task]) {
+			field := declare(task)
+			if !batched {
+				field.UseBatch(func(ctx context.Context) bool { return false })
+			}
+		})
+		return b.MustBuild()
+	}
+
+	_, batchedErr := runErr(t, build(true), query)
+	_, unbatchedErr := runErr(t, build(false), query)
+	require.Error(t, batchedErr)
+	require.Error(t, unbatchedErr)
+	return batchedErr
+}
+
+// TestBatchPanicBecomesAnError checks that a resolver that panics is reported
+// rather than taking the process with it.
+func TestBatchPanicBecomesAnError(t *testing.T) {
+	err := bothWaysErr(t, func(task *lightning.Type[Task]) *lightning.Field {
+		return task.Batch("probe", func(ctx context.Context, tasks []*Task) ([]string, error) {
+			panic("bad times")
+		})
+	}, `{ tasks { probe } }`)
+	require.ErrorContains(t, err, "bad times")
+}
+
+// TestBatchNullableResults covers a resolver whose results are pointers, some
+// of them nil.
+func TestBatchNullableResults(t *testing.T) {
+	got := bothWays(t, func(task *lightning.Type[Task]) *lightning.Field {
+		return task.Batch("probe", func(ctx context.Context, tasks []*Task) ([]*string, error) {
+			out := make([]*string, len(tasks))
+			for i, task := range tasks {
+				if task.Key == "t2" {
+					continue
+				}
+				value := "probed " + task.Key
+				out[i] = &value
+			}
+			return out, nil
+		})
+	}, `{ tasks { probe } }`)
+
+	tasks := got["tasks"].([]any)
+	require.Equal(t, "probed t1", tasks[0].(map[string]any)["probe"])
+	require.Nil(t, tasks[1].(map[string]any)["probe"])
+	require.Equal(t, "probed t3", tasks[2].(map[string]any)["probe"])
+}
+
+// probeStatus is an enum returned from a batch field.
+type probeStatus int32
+
+const (
+	probeOK probeStatus = iota
+	probeBad
+)
+
+// TestBatchEnumResults checks that a batched field resolving to an enum reports
+// the enum's names.
+func TestBatchEnumResults(t *testing.T) {
+	build := func(batched bool) *graphql.Schema {
+		b := lightning.New()
+		lightning.Enum(b, "ProbeStatus", map[string]probeStatus{"ok": probeOK, "bad": probeBad})
+		task := lightning.Object[Task](b)
+		field := task.Batch("probe", func(ctx context.Context, tasks []*Task) ([]probeStatus, error) {
+			out := make([]probeStatus, len(tasks))
+			for i, task := range tasks {
+				if task.Key == "t2" {
+					out[i] = probeBad
+				}
+			}
+			return out, nil
+		})
+		if !batched {
+			field.UseBatch(func(ctx context.Context) bool { return false })
+		}
+		b.Query().Field("tasks", func(ctx context.Context, _ *lightning.Root) ([]*Task, error) {
+			return []*Task{{Key: "t1"}, {Key: "t2"}}, nil
+		})
+		return b.MustBuild()
+	}
+
+	for _, batched := range []bool{true, false} {
+		got := run(t, build(batched), `{ tasks { probe } }`)
+		tasks := got["tasks"].([]any)
+		require.Equal(t, "ok", tasks[0].(map[string]any)["probe"])
+		require.Equal(t, "bad", tasks[1].(map[string]any)["probe"])
+	}
+}
+
+// TestBatchObjectAndListResults checks the two shapes beyond a scalar: a
+// resolved object, and a list per parent.
+func TestBatchObjectAndListResults(t *testing.T) {
+	got := bothWays(t, func(task *lightning.Type[Task]) *lightning.Field {
+		return task.Batch("probe", func(ctx context.Context, tasks []*Task) ([]*Owner, error) {
+			out := make([]*Owner, len(tasks))
+			for i, task := range tasks {
+				out[i] = &Owner{Name: task.Key}
+			}
+			return out, nil
+		})
+	}, `{ tasks { probe { name } } }`)
+	require.Equal(t, "t1", got["tasks"].([]any)[0].(map[string]any)["probe"].(map[string]any)["name"])
+
+	got = bothWays(t, func(task *lightning.Type[Task]) *lightning.Field {
+		return task.Batch("labels", func(ctx context.Context, tasks []*Task) ([][]string, error) {
+			out := make([][]string, len(tasks))
+			for i, task := range tasks {
+				out[i] = []string{task.Key, task.Title}
+			}
+			return out, nil
+		})
+	}, `{ tasks { labels } }`)
+	require.Equal(t, []any{"t1", "One"}, got["tasks"].([]any)[0].(map[string]any)["labels"])
+}
+
+// TestBatchIsNotCalledForAnEmptyList checks that no parents means no call, in
+// either mode.
+func TestBatchIsNotCalledForAnEmptyList(t *testing.T) {
+	build := func(batched bool) *graphql.Schema {
+		b := lightning.New()
+		task := lightning.Object[Task](b)
+		field := task.Batch("probe", func(ctx context.Context, tasks []*Task) ([]string, error) {
+			require.Fail(t, "the resolver should not have been called")
+			return nil, nil
+		})
+		if !batched {
+			field.UseBatch(func(ctx context.Context) bool { return false })
+		}
+		b.Query().Field("tasks", func(ctx context.Context, _ *lightning.Root) ([]*Task, error) {
+			return []*Task{}, nil
+		})
+		return b.MustBuild()
+	}
+
+	for _, batched := range []bool{true, false} {
+		got := run(t, build(batched), `{ tasks { probe } }`)
+		require.Empty(t, got["tasks"])
+	}
+}
+
+// TestBatchOverAValueList checks a resolver whose parents arrive as values
+// rather than pointers, which is how a list of structs reaches a field.
+func TestBatchOverAValueList(t *testing.T) {
+	b := lightning.New()
+	task := lightning.Object[Task](b)
+	task.Batch("probe", func(ctx context.Context, tasks []*Task) ([]string, error) {
+		out := make([]string, len(tasks))
+		for i, task := range tasks {
+			out[i] = "probed " + task.Title
+		}
+		return out, nil
+	})
+	b.Query().Field("tasks", func(ctx context.Context, _ *lightning.Root) ([]Task, error) {
+		return []Task{{Key: "t1", Title: "One"}, {Key: "t2", Title: "Two"}}, nil
+	})
+
+	got := run(t, b.MustBuild(), `{ tasks { probe } }`)
+	tasks := got["tasks"].([]any)
+	require.Equal(t, "probed One", tasks[0].(map[string]any)["probe"])
+	require.Equal(t, "probed Two", tasks[1].(map[string]any)["probe"])
+}
+
+// TestBatchNonNullOverride checks that a batch field can be marked non-null
+// like any other, and that the schema says so.
+func TestBatchNonNullOverride(t *testing.T) {
+	b := listSchema(t, func(task *lightning.Type[Task]) {
+		task.Batch("probe", func(ctx context.Context, tasks []*Task) ([]*Owner, error) {
+			return make([]*Owner, len(tasks)), nil
+		}).NonNull()
+	})
+
+	sdl := printSchema(t, b.MustBuild())
+	require.Contains(t, sdl, "probe: Owner!\n")
 }
