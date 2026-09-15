@@ -3,10 +3,10 @@
 A Relay network layer for [lightning](https://github.com/hiett/lightning)'s
 reactive websocket protocol.
 
-Lightning does not re-send a payload when a live query's data changes. It
-re-executes the query, diffs the new result against the one it last sent, and
-pushes only the difference. This package speaks that protocol, reassembles the
-payloads, and hands Relay a complete `GraphQLResponse` every time.
+Lightning does not re-send the whole payload when a live query's data changes.
+It re-executes the query, diffs the new result against the one it last sent, and
+pushes only the difference. This package speaks that protocol. It reassembles
+the payloads and hands Relay a complete `GraphQLResponse` every time.
 
 - One websocket for queries, mutations and live queries.
 - Reconnects with jittered exponential backoff and replays every subscription.
@@ -19,9 +19,9 @@ payloads, and hands Relay a complete `GraphQLResponse` every time.
 npm install @hiett/lightning-relay relay-runtime
 ```
 
-`@types/relay-runtime` comes along as a dependency rather than a peer, because
-this package's own `.d.ts` files refer to those types and `relay-runtime` ships
-Flow types and no TypeScript ones.
+`@types/relay-runtime` is a dependency rather than a peer, because this
+package's own `.d.ts` files refer to those types and `relay-runtime` ships Flow
+types and no TypeScript ones.
 
 ## Quick start
 
@@ -46,8 +46,8 @@ createLightningNetwork({
 });
 ```
 
-To control the socket's lifetime yourself -- or to share one socket between
-several environments -- build the connection and pass it in:
+To control the socket's lifetime yourself, or to share one socket between
+several environments, build the connection and pass it in:
 
 ```ts
 import { LightningConnection, createLightningNetwork } from "@hiett/lightning-relay";
@@ -56,19 +56,41 @@ const connection = new LightningConnection({ url: "wss://api.example.com/graphql
 const network = createLightningNetwork({ connection });
 
 // on sign-out. Every subscription ends with an error, and in-flight mutations
-// reject; see "Behaviour worth knowing".
+// reject; see "Behaviour to expect".
 connection.close();
 ```
 
 ## A worked example
 
-Take a schema whose `User` type declares a key field. The key is what lets the
-server line up array elements between executions, and every paginated (Relay
-connection) node type is required to have one:
+Take a schema whose `User` type is a Relay node. Nothing declares a key field:
+`relay.Node` takes one from the type's `NodeID` method. The server uses the key
+to line up array elements between executions, and every paginated (Relay
+connection) node type must have one:
 
 ```go
-user := schema.Object("User", User{})
-user.Key("id")
+type User struct {
+    lightning.Meta `description:"A person."`
+
+    Key  string `graphql:"-"`
+    Name string `description:"The user's display name."`
+}
+
+func (u *User) NodeID() string { return u.Key }
+
+users := map[string]*User{
+    "1": {Key: "1", Name: "bob"},
+    "2": {Key: "2", Name: "alice"},
+}
+
+b := lightning.New(relay.Plugin())
+lightning.Object[User](b)
+relay.Node(b, func(ctx context.Context, id string) (*User, error) {
+    return users[id], nil
+})
+
+b.Query().Field("users", func(ctx context.Context, _ *lightning.Root) ([]*User, error) {
+    return []*User{users["1"], users["2"]}, nil
+})
 ```
 
 A Relay query:
@@ -91,19 +113,23 @@ Relay calls the network layer, which sends:
   "variables":{}}}
 ```
 
-The first reply is always a complete snapshot, because the server has nothing to
-diff against yet. A snapshot is wrapped in a one-element array -- that wrapper is
-the protocol's way of saying "this subtree is final, do not merge into it":
+The first reply is always a complete snapshot: the server has nothing to diff
+against yet. A snapshot is wrapped in a one-element array. The wrapper means
+"this subtree is final, do not merge into it":
 
 ```json
 {"id":"0","type":"update","message":[
-  {"users":[{"id":"1","name":"bob"},{"id":"2","name":"alice"}]}]}
+  {"users":[{"id":"VXNlcjox","name":"bob"},{"id":"VXNlcjoy","name":"alice"}]}]}
 ```
 
-Relay receives the payload:
+`id` is the global identifier `relay.Node` gives the type, so it arrives
+base64 encoded: `VXNlcjox` decodes to `User:1`. Relay receives the payload:
 
 ```json
-{ "data": { "users": [{ "id": "1", "name": "bob" }, { "id": "2", "name": "alice" }] } }
+{ "data": { "users": [
+  { "id": "VXNlcjox", "name": "bob" },
+  { "id": "VXNlcjoy", "name": "alice" }
+] } }
 ```
 
 Now someone renames alice, and someone else is added. The server re-executes the
@@ -111,7 +137,7 @@ query and sends only what moved:
 
 ```json
 {"id":"0","type":"update","message":{
-  "users":{"$":[[0,2],-1],"1":{"name":"alex"},"2":[{"id":"3","name":"carol"}]}}}
+  "users":{"$":[[0,2],-1],"1":{"name":"alex"},"2":[{"id":"VXNlcjoz","name":"carol"}]}}}
 ```
 
 `"$"` is the reordering: `[0, 2]` is a run meaning "slots 0 and 1 come from
@@ -123,14 +149,14 @@ thing again:
 
 ```json
 { "data": { "users": [
-  { "id": "1", "name": "bob" },
-  { "id": "2", "name": "alex" },
-  { "id": "3", "name": "carol" }
+  { "id": "VXNlcjox", "name": "bob" },
+  { "id": "VXNlcjoy", "name": "alex" },
+  { "id": "VXNlcjoz", "name": "carol" }
 ] } }
 ```
 
-An execution that changes nothing sends no frame at all. Silence means
-"unchanged", not "stalled".
+An execution that changes nothing sends no frame. Silence means the data is
+unchanged. It does not mean the subscription has stalled.
 
 ## Queries, mutations and live queries
 
@@ -140,14 +166,14 @@ An execution that changes nothing sends no frame at all. Silence means
 | mutation | `mutate` | Resolves with the result payload. |
 | subscription | `subscribe` | Stays open; emits a full payload per change. |
 
-A mutation also causes the server to re-run every live query on the same socket
-immediately, so the effects of a mutation arrive as updates without any
+A mutation also makes the server re-run every live query on the same socket
+immediately, so the effects of the mutation arrive as updates with no
 client-side cache invalidation.
 
 ### Making a query live
 
-A subscription here is a live query: nothing is pushed as an event, the query is
-simply re-run and the difference sent. Relay routes an operation to
+A subscription here is a live query. Nothing is pushed as an event: the server
+re-runs the query and sends the difference. Relay routes an operation to
 `subscribeFn` only when it is declared as a `subscription`, so a live query is
 written as one:
 
@@ -165,28 +191,32 @@ subscription TasksLiveSubscription {
 }
 ```
 
-The server has one requirement that is easy to trip over. It validates the
-document against the schema's **subscription** root, but executes the selection
-set against the **query** root, so a field used this way has to exist on both.
-Registering it twice is the whole of it -- and it is what lets the same field be
-fetched once or watched, as the example schema does:
+The server has one requirement that is often missed. It validates the document
+against the schema's **subscription** root, but executes the selection set
+against the **query** root, so a field used this way has to exist on both.
+Register it twice, and the same field can then be fetched once or watched, as
+the example schema does:
 
 ```go
-relay.Connection(b.Query(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
-    return store.Tasks(ctx)
-})
+tasks := func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
+    invalidator.Depend(ctx, "tasks") // before the read, never after
+    return []*Task{
+        {Key: "1", Title: "Write the schema", Done: true},
+        {Key: "2", Title: "Make it live"},
+    }, nil
+}
 
-relay.Connection(b.Subscription(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
-    return store.Tasks(ctx)
-})
+relay.Connection(b.Query(), "tasks", tasks)
+relay.Connection(b.Subscription(), "tasks", tasks)
 ```
 
-Nothing about the resolver makes it live. What makes it live is the dependency
-the store records while resolving: when that key is invalidated, the operation
-re-executes and the new result is pushed to everyone watching it.
+Nothing about the resolver makes it live. Liveness comes from the dependency it
+records while resolving: `Depend` names the keys it is about to read, and when
+one of them is invalidated, the operation re-executes and the new result is
+pushed to everyone watching it.
 
-To drive a live query without Relay's operation routing -- outside a Relay
-environment, or for a field that only exists on the query root -- use the
+To drive a live query without Relay's operation routing (outside a Relay
+environment, or for a field that only exists on the query root), use the
 connection directly:
 
 ```ts
@@ -214,57 +244,57 @@ const handle = connection.subscribe(
 handle.dispose();
 ```
 
-Routing ordinary Relay queries through a multi-emit observable, so that any
-query can be live without being declared a subscription, is future work.
+Routing query operations through a multi-emit observable, so that any query can
+be live without being declared a subscription, is future work.
 
-## Behaviour worth knowing
+## Behaviour to expect
 
 **Mutations are never queued.** A mutation attempted while the socket is down
 rejects immediately with `lightning: not connected`, and one that was in flight
-when the socket dropped rejects with `connection closed`. This is deliberate.
-The server offers no idempotency, and a client cannot tell a mutation that never
-arrived from one whose reply was lost, so replaying it across a reconnect risks
-applying it twice. Retrying is left to the caller, who knows whether the
-operation is safe to repeat. Queries and subscriptions have no such problem and
-are replayed automatically.
+when the socket dropped rejects with `connection closed`. Neither waits for a
+new socket. The server offers no idempotency, and a client cannot tell a
+mutation that never arrived from one whose reply was lost, so replaying one
+across a reconnect risks applying it twice. Retrying is left to the caller, who
+knows whether the operation is safe to repeat. Queries and subscriptions are
+safe to replay, and are replayed automatically.
 
 **A query waits for a socket, but not for ever.** A query issued while the
-connection is down is held and sent on whatever socket opens next, which is what
-makes a reconnect invisible to a screen that is merely loading. Past
-`queryTimeoutMs` (default 30s) it gives up and rejects with
-`lightning: query timed out`, because a promise that never settles gives Relay
-nothing at all to render -- not even a failure.
+connection is down is held and sent on whatever socket opens next, so a
+reconnect is invisible to a screen that is still loading. Past `queryTimeoutMs`
+(default 30s) the query gives up and rejects with `lightning: query timed out`,
+because a promise that never settles gives Relay nothing to render, not even a
+failure.
 
-**`close()` is terminal for the work in flight.** In-flight mutations reject and
-every subscription ends through its `onError` with `lightning: connection
-closed`. A later `connect()` opens a fresh socket for new operations; it does
+**`close()` is terminal for the work in flight.** In-flight mutations reject,
+and every subscription ends through its `onError` with `lightning: connection
+closed`. A later `connect()` opens a fresh socket for new operations. It does
 not bring back the subscriptions `close()` ended, and `subscribe()` throws in
-between. The alternative -- dropping them quietly, which is what this used to do
--- leaves each caller holding a handle to something that will never produce
-another value and never say why.
+between. An earlier version dropped them quietly, leaving each caller holding a
+handle to something that would never produce another value, with no error to say
+why.
 
-**File uploads are not supported.** There is no multipart request to attach
-files to, only a JSON text frame, so `commitMutation({uploadables})` rejects
-rather than sending the mutation with the files silently missing. Upload out of
-band and pass the result as a variable.
+**File uploads are not supported.** The protocol sends a JSON text frame, and
+there is no multipart request to attach files to, so
+`commitMutation({uploadables})` rejects rather than sending the mutation with
+the files silently missing. Upload out of band and pass the result as a
+variable.
 
 **A reconnect starts every subscription over.** The server keeps no session and
 there are no resume tokens: the client is the only record of what is subscribed.
 On reconnect every subscription is re-sent with its original id, the server's
 previous value is empty again, and the first update is a fresh snapshot. The
-accumulated payload is discarded at that moment, because a diff against a value
-nobody remembers is meaningless.
+accumulated payload is discarded at that point, because a diff against a value
+the server no longer remembers is meaningless.
 
 **Subscription errors are terminal.** The server closes a subscription when it
 reports an error on it, so the error reaches Relay through `sink.error` rather
-than being retried silently. A live query that quietly stops updating is worse
-than one that says it stopped. Socket-level failures are different and are
+than being retried silently. Socket-level failures are different and are
 retried transparently.
 
 **`__key` never reaches Relay.** The server adds a `__key` field to objects of
 keyed types so that it can line up array elements across executions. Nothing
 selected it, and Relay would not expect it, so it is removed from a deep copy on
-the way out -- the accumulated payload keeps its keys for the next diff.
+the way out. The accumulated payload keeps its keys for the next diff.
 
 **Only the first execution of a subscription can fail visibly.** An error in a
 *re*-execution is swallowed server-side and retried, so a live query will not
@@ -289,19 +319,17 @@ report a transient resolver failure.
 | `autoConnect` | `true` | Set `false` for SSR or tests. |
 | `logger` | -- | `{ warn(message, detail?) }`. |
 
-`WebSocketLike` is the three members this package actually uses --
-`readyState`, `send`, `close` -- plus the four handler properties it assigns.
-Anything with those works, which is what lets the DOM's `WebSocket` and Node's
-`ws` both be passed without their mutually incompatible event types getting in
-the way.
+`WebSocketLike` is the three members this package uses (`readyState`, `send`,
+`close`) plus the four handler properties it assigns. Anything with those works,
+so the DOM's `WebSocket` and Node's `ws` can both be passed despite their
+incompatible event types.
 
 A connection that stood up for at least ten seconds and then dropped is treated
-as a network blip and retried immediately. Anything else -- a refused upgrade, a
-bad token, a server that accepts the socket and hangs up on it -- is treated as
-a refusal and backed off. A single immediate retry is all a blip ever buys: the
-retry that follows it is backed off unless the connection in between also lasted
-those ten seconds, so a flapping server climbs the same curve as one that never
-answers at all.
+as a network blip and retried immediately. Anything else is treated as a refusal
+and backed off: a refused upgrade, a bad token, a server that accepts the socket
+and hangs up on it. A blip buys one immediate retry. The retry that follows it
+is backed off unless the connection in between also lasted ten seconds, so a
+flapping server climbs the same curve as a server that never answers.
 
 ## The diff format
 
@@ -320,14 +348,14 @@ reordering, plus an optional `"$"` holding the reordering: for each slot of the
 new array, where its previous value came from. Runs of consecutive indices are
 compressed to `[start, length]`, and `-1` means a slot with no previous value.
 
-Two details bite every port of this format:
+Ports of this format go wrong on two details:
 
 - **An absent `"$"` means "same length, same order". It does not mean "empty".**
   `{"$": []}` is a legal diff meaning the new array is empty. Test for the key's
-  presence, never for truthiness.
-- **`[start, length]` is a count, not an end index.** Reading it as an inclusive
-  end produces a stale trailing element, loses the tail of any run that does not
-  start at index 1, and can index past the end of the array.
+  presence rather than for truthiness.
+- **`[start, length]` is a count. It is not an end index.** Reading `length` as
+  an inclusive end produces a stale trailing element, loses the tail of any run
+  that does not start at index 1, and can index past the end of the array.
 
 ```ts
 import { merge } from "@hiett/lightning-relay";
@@ -336,10 +364,10 @@ merge(["a", "b", "c", "d"], { $: [[1, 3], -1], "3": "e" });
 // => ["b", "c", "d", "e"]
 ```
 
-`merge` never mutates its arguments -- not even by freezing them -- shares the
-subtrees of the previous value that a diff did not touch, and freezes what it
-returns. A value taken out of a diff is copied on the way in, so nothing it
-returns aliases the message you handed it.
+`merge` never mutates its arguments, not even by freezing them. It freezes the
+containers it builds, and shares the subtrees of the previous value that a diff
+did not touch. A value taken out of a diff is copied on the way in, so nothing
+it returns aliases the message you handed it.
 
 ## Development
 
@@ -350,13 +378,13 @@ npm test
 npm run build
 ```
 
-The merge test suite asserts against diffs generated by the Go differ itself
+The merge test suite asserts against diffs generated by the Go differ
 (`diff.Diff`), including every example in `diff/diff.go`'s package
 documentation, so it tests the bytes a real server emits rather than a reading
 of the spec. The connection and network suites run on a websocket the test
 drives by hand (`src/testing/fakeWebSocket.ts`) and on fake timers, so backoff,
-the heartbeat and the reconnect-and-replay sequence are asserted rather than
+the heartbeat and the reconnect-and-replay sequence are asserted instead of
 waited for.
 
-`npm run typecheck` checks the tests too; `npm run build` is the only step that
+`npm run typecheck` checks the tests too. `npm run build` is the only step that
 excludes them, so nothing untested ends up in `dist`.
