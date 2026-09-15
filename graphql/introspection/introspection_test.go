@@ -109,7 +109,7 @@ func TestComputeSchemaJSON(t *testing.T) {
 	defer snap.Verify()
 	schemaBuilderSchema := makeSchema()
 
-	actualBytes, err := introspection.ComputeSchemaJSON(*schemaBuilderSchema)
+	actualBytes, err := introspection.ComputeSchemaJSON(schemaBuilderSchema.MustBuild())
 	require.NoError(t, err)
 
 	var actual map[string]interface{}

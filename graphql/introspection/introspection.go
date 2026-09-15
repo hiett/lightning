@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"sort"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 )
 
 type introspection struct {
@@ -50,8 +50,8 @@ type InputValue struct {
 	DefaultValue *string
 }
 
-func (s *introspection) registerInputValue(schema *schemabuilder.Schema) {
-	schema.Object("__InputValue", InputValue{})
+func (s *introspection) registerInputValue(b *lightning.Builder) {
+	lightning.Object[InputValue](b).Name("__InputValue")
 }
 
 type EnumValue struct {
@@ -61,8 +61,8 @@ type EnumValue struct {
 	DeprecationReason string
 }
 
-func (s *introspection) registerEnumValue(schema *schemabuilder.Schema) {
-	schema.Object("__EnumValue", EnumValue{})
+func (s *introspection) registerEnumValue(b *lightning.Builder) {
+	lightning.Object[EnumValue](b).Name("__EnumValue")
 }
 
 type Directive struct {
@@ -72,8 +72,8 @@ type Directive struct {
 	Args        []InputValue
 }
 
-func (s *introspection) registerDirective(schema *schemabuilder.Schema) {
-	schema.Object("__Directive", Directive{})
+func (s *introspection) registerDirective(b *lightning.Builder) {
+	lightning.Object[Directive](b).Name("__Directive")
 }
 
 type Schema struct {
@@ -84,8 +84,8 @@ type Schema struct {
 	Directives       []Directive
 }
 
-func (s *introspection) registerSchema(schema *schemabuilder.Schema) {
-	schema.Object("__Schema", Schema{})
+func (s *introspection) registerSchema(b *lightning.Builder) {
+	lightning.Object[Schema](b).Name("__Schema")
 }
 
 type Type struct {
@@ -142,9 +142,9 @@ var DeprecatedDirective = Directive{
 	},
 }
 
-func (s *introspection) registerType(schema *schemabuilder.Schema) {
-	object := schema.Object("__Type", Type{})
-	object.FieldFunc("kind", func(t Type) TypeKind {
+func (s *introspection) registerType(b *lightning.Builder) {
+	object := lightning.Object[Type](b).Name("__Type")
+	object.Attr("kind", func(t *Type) TypeKind {
 		switch t.Inner.(type) {
 		case *graphql.Object:
 			return OBJECT
@@ -167,7 +167,7 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		}
 	})
 
-	object.FieldFunc("name", func(t Type) *string {
+	object.Attr("name", func(t *Type) *string {
 		switch t := t.Inner.(type) {
 		case *graphql.Object:
 			return &t.Name
@@ -186,7 +186,7 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		}
 	})
 
-	object.FieldFunc("description", func(t Type) string {
+	object.Attr("description", func(t *Type) string {
 		switch t := t.Inner.(type) {
 		case *graphql.Object:
 			return t.Description
@@ -205,7 +205,7 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		}
 	})
 
-	object.FieldFunc("interfaces", func(t Type) []Type {
+	object.Attr("interfaces", func(t *Type) []Type {
 		object, ok := t.Inner.(*graphql.Object)
 		if !ok {
 			return nil
@@ -218,7 +218,7 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		return types
 	})
 
-	object.FieldFunc("possibleTypes", func(t Type) []Type {
+	object.Attr("possibleTypes", func(t *Type) []Type {
 		var objects map[string]*graphql.Object
 		switch t := t.Inner.(type) {
 		case *graphql.Union:
@@ -237,7 +237,7 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		return types
 	})
 
-	object.FieldFunc("inputFields", func(t Type) []InputValue {
+	object.Attr("inputFields", func(t *Type) []InputValue {
 		var fields []InputValue
 
 		switch t := t.Inner.(type) {
@@ -255,9 +255,7 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		return fields
 	})
 
-	object.FieldFunc("fields", func(t Type, args struct {
-		IncludeDeprecated *bool
-	}) []field {
+	object.FieldArgs("fields", func(_ context.Context, t *Type, args includeDeprecatedArgs) ([]field, error) {
 		var source map[string]*graphql.Field
 		switch t := t.Inner.(type) {
 		case *graphql.Object:
@@ -265,7 +263,7 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		case *graphql.Interface:
 			source = t.Fields
 		default:
-			return nil
+			return nil, nil
 		}
 
 		includeDeprecated := args.IncludeDeprecated != nil && *args.IncludeDeprecated
@@ -297,10 +295,10 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		}
 		sort.Slice(fields, func(i, j int) bool { return fields[i].Name < fields[j].Name })
 
-		return fields
+		return fields, nil
 	})
 
-	object.FieldFunc("ofType", func(t Type) *Type {
+	object.Attr("ofType", func(t *Type) *Type {
 		switch t := t.Inner.(type) {
 		case *graphql.List:
 			return &Type{Inner: t.Type}
@@ -311,12 +309,10 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		}
 	})
 
-	object.FieldFunc("enumValues", func(t Type, args struct {
-		IncludeDeprecated *bool
-	}) []EnumValue {
+	object.FieldArgs("enumValues", func(_ context.Context, t *Type, args includeDeprecatedArgs) ([]EnumValue, error) {
 		enum, ok := t.Inner.(*graphql.Enum)
 		if !ok {
-			return nil
+			return nil, nil
 		}
 
 		includeDeprecated := args.IncludeDeprecated != nil && *args.IncludeDeprecated
@@ -335,13 +331,19 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 			})
 		}
 		sort.Slice(enumVals, func(i, j int) bool { return enumVals[i].Name < enumVals[j].Name })
-		return enumVals
+		return enumVals, nil
 	})
 }
 
 // sortTypes orders a type list by name so introspection output is stable.
 func sortTypes(types []Type) {
 	sort.Slice(types, func(i, j int) bool { return types[i].Inner.String() < types[j].Inner.String() })
+}
+
+// includeDeprecatedArgs is the argument both __Type.fields and
+// __Type.enumValues take, spelled once.
+type includeDeprecatedArgs struct {
+	IncludeDeprecated *bool
 }
 
 type field struct {
@@ -353,8 +355,8 @@ type field struct {
 	DeprecationReason string
 }
 
-func (s *introspection) registerField(schema *schemabuilder.Schema) {
-	schema.Object("__Field", field{})
+func (s *introspection) registerField(b *lightning.Builder) {
+	lightning.Object[field](b).Name("__Field")
 }
 
 func collectTypes(typ graphql.Type, types map[string]graphql.Type) {
@@ -429,10 +431,10 @@ func collectTypes(typ graphql.Type, types map[string]graphql.Type) {
 	}
 }
 
-func (s *introspection) registerQuery(schema *schemabuilder.Schema) {
-	object := schema.Query()
+func (s *introspection) registerQuery(b *lightning.Builder) {
+	object := b.Query()
 
-	object.FieldFunc("__schema", func() *Schema {
+	object.Attr("__schema", func(_ *lightning.Root) *Schema {
 		var types []Type
 
 		for _, typ := range s.types {
@@ -456,30 +458,33 @@ func (s *introspection) registerQuery(schema *schemabuilder.Schema) {
 		return schema
 	})
 
-	object.FieldFunc("__type", func(args struct{ Name string }) *Type {
+	object.FieldArgs("__type", func(_ context.Context, _ *lightning.Root, args typeArgs) (*Type, error) {
 		if typ, ok := s.types[args.Name]; ok {
-			return &Type{Inner: typ}
+			return &Type{Inner: typ}, nil
 		}
-		return nil
+		return nil, nil
 	})
 }
 
-func (s *introspection) registerMutation(schema *schemabuilder.Schema) {
-	schema.Mutation()
+func (s *introspection) registerMutation(b *lightning.Builder) {}
+
+// typeArgs names the type __type(name:) is asked about.
+type typeArgs struct {
+	Name string
 }
 
 func (s *introspection) schema() *graphql.Schema {
-	schema := schemabuilder.NewSchema()
-	s.registerDirective(schema)
-	s.registerEnumValue(schema)
-	s.registerField(schema)
-	s.registerInputValue(schema)
-	s.registerMutation(schema)
-	s.registerQuery(schema)
-	s.registerSchema(schema)
-	s.registerType(schema)
+	b := lightning.New()
+	s.registerDirective(b)
+	s.registerEnumValue(b)
+	s.registerField(b)
+	s.registerInputValue(b)
+	s.registerMutation(b)
+	s.registerQuery(b)
+	s.registerSchema(b)
+	s.registerType(b)
 
-	return schema.MustBuild()
+	return b.MustBuild()
 }
 
 func BareIntrospectionSchema(schema *graphql.Schema) *graphql.Schema {
@@ -509,9 +514,8 @@ func AddIntrospectionToSchema(schema *graphql.Schema) {
 }
 
 // ComputeSchemaJSON returns the result of executing a GraphQL introspection
-// query.
-func ComputeSchemaJSON(schemaBuilderSchema schemabuilder.Schema) ([]byte, error) {
-	schema := schemaBuilderSchema.MustBuild()
+// query against a built schema.
+func ComputeSchemaJSON(schema *graphql.Schema) ([]byte, error) {
 	AddIntrospectionToSchema(schema)
 	return RunIntrospectionQuery(schema)
 }
