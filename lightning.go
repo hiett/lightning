@@ -189,6 +189,9 @@ type typeDecl struct {
 
 	// meta carries per-type plugin data.
 	meta map[string]any
+
+	// keyField identifies one value of this type for the live-query diff.
+	keyField *graphql.Field
 }
 
 type enumValue struct {

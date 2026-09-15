@@ -170,7 +170,7 @@ func TestExecuteGood(t *testing.T) {
 
 	e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
 
-	result, err := e.Execute(ctx, builtSchema.Query, nil, q)
+	result, err := e.Execute(graphql.WithKeys(ctx), builtSchema.Query, nil, q)
 	if err != nil {
 		t.Error(err)
 	}

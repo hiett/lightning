@@ -157,6 +157,16 @@ func (d DeclaredType) SetMeta(key string, value any) {
 	d.decl.meta[key] = value
 }
 
+// SetKeyField names the field whose value identifies one value of this type.
+//
+// The live-query diff uses it to line up the elements of a list between one
+// push and the next: with a key, moving an item is a reorder, and without one
+// it is a delete and an insert of everything after it. The key is not part of
+// the schema — it travels as __key alongside the payload.
+func (d DeclaredType) SetKeyField(field *graphql.Field) {
+	d.decl.keyField = field
+}
+
 // AddField adds a field to a declared type from a plugin, in its runtime form.
 func (d DeclaredType) AddField(name string, field *graphql.Field) {
 	d.decl.fields = append(d.decl.fields, &fieldDecl{

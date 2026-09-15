@@ -217,6 +217,8 @@ func (b *Builder) buildObject(decl *typeDecl) (graphql.Type, error) {
 		return nil, fmt.Errorf("%s has no fields; a GraphQL type needs at least one", decl.name)
 	}
 
+	object.KeyField = decl.keyField
+
 	return object, nil
 }
 

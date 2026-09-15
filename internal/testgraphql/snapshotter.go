@@ -56,7 +56,9 @@ func (s *Snapshotter) SnapshotQuery(name, query string, opts ...Option) {
 	var lastErr error
 	runOnce := false
 	for _, executorAndName := range GetExecutors() {
-		output, err := executorAndName.Executor.Execute(context.Background(), s.schema.Query, nil, q)
+		// As in ExecutorWrapper: these snapshots were taken when __key was
+		// always emitted, so they ask for it explicitly.
+		output, err := executorAndName.Executor.Execute(graphql.WithKeys(context.Background()), s.schema.Query, nil, q)
 
 		if err != nil && opt.recordError {
 			s.Snapshot(fmt.Sprintf("%s%s", executorAndName.Name, name), struct{ Error string }{err.Error()})

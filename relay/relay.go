@@ -292,6 +292,19 @@ func (r *Relay) BeforeBuild(b *lightning.Builder) error {
 				return r.codec.Encode(node.name, localID)
 			},
 		})
+
+		// The local identifier is also what the live-query diff lines list
+		// elements up by, so a node type needs no key declaration: being a node
+		// already said how to name one of its values. The old library made this
+		// a separate Key("field") call, which additionally forced the key to be
+		// an exposed field.
+		declared.SetKeyField(&graphql.Field{
+			Type:           &graphql.NonNull{Type: lightning.ScalarType("String")},
+			ParseArguments: noArguments,
+			Resolve: func(ctx context.Context, source, _ any, _ *graphql.SelectionSet) (any, error) {
+				return node.localID(ctx, source)
+			},
+		})
 	}
 
 	for goType, node := range r.nodes {

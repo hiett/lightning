@@ -587,7 +587,11 @@ func resolveObjectBatch(ctx context.Context, sources []interface{}, typ *Object,
 		}
 	}
 
-	if typ.KeyField != nil {
+	// __key is the correlation token the live-query diff uses to line list
+	// elements up between one push and the next. It is not part of the schema
+	// and no client asked for it, so it is emitted only where something needs
+	// it: a plain query response is the client's selection set and nothing else.
+	if typ.KeyField != nil && wantsKeys(ctx) {
 		destForSelection := make([]*outputNode, 0, len(nonNilDestinations))
 		for idx, destMap := range nonNilDestinations {
 			filler := newOutputNode(originDestinations[idx], "__key")

@@ -195,6 +195,9 @@ func (c *conn) handleSubscribe(in *inEnvelope) error {
 	c.subscriptions[id] = reactive.NewRerunner(c.ctx, func(ctx context.Context) (interface{}, error) {
 		ctx = c.makeCtx(ctx)
 		ctx = batch.WithBatching(ctx)
+		// This protocol pushes a diff of each result against the last, so it
+		// needs the __key fields that line list elements up.
+		ctx = WithKeys(ctx)
 
 		start := time.Now()
 

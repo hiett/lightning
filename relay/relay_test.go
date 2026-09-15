@@ -382,3 +382,33 @@ func TestEmptyConnectionHasNullCursors(t *testing.T) {
 	require.Nil(t, info["endCursor"])
 	require.Equal(t, false, info["hasNextPage"])
 }
+
+// TestKeysTravelOnlyWhenAsked pins the contract of __key: being a node names a
+// value for the live-query diff, but an ordinary response carries no trace of
+// it. The diff protocol opts in; a plain HTTP query does not.
+func TestKeysTravelOnlyWhenAsked(t *testing.T) {
+	schema := nodeSchema(t)
+
+	q, err := graphql.Parse(`{ firstTask { title } }`, nil)
+	require.NoError(t, err)
+	require.NoError(t, graphql.PrepareQuery(context.Background(), schema.Query, q.SelectionSet))
+
+	execute := func(ctx context.Context) map[string]any {
+		e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
+		result, err := e.Execute(ctx, schema.Query, nil, q)
+		require.NoError(t, err)
+
+		encoded, err := json.Marshal(result)
+		require.NoError(t, err)
+		var out map[string]any
+		require.NoError(t, json.Unmarshal(encoded, &out))
+		return out["firstTask"].(map[string]any)
+	}
+
+	plain := execute(context.Background())
+	require.NotContains(t, plain, "__key")
+	require.Equal(t, "Write the schema", plain["title"])
+
+	keyed := execute(graphql.WithKeys(context.Background()))
+	require.Equal(t, "t1", keyed["__key"])
+}

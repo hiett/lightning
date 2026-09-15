@@ -1,9 +1,30 @@
 package graphql
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 )
+
+// keysWantedKey marks a computation whose result will be diffed, and which
+// therefore needs the __key correlation fields.
+type keysWantedKey struct{}
+
+// WithKeys marks a context as wanting the __key field on every object that has
+// one.
+//
+// The live-query diff protocol uses __key to line up the elements of a list
+// between one push and the next; nothing else does, and a plain query response
+// should carry only what the client selected.
+func WithKeys(ctx context.Context) context.Context {
+	return context.WithValue(ctx, keysWantedKey{}, true)
+}
+
+// wantsKeys reports whether __key should be emitted.
+func wantsKeys(ctx context.Context) bool {
+	wanted, _ := ctx.Value(keysWantedKey{}).(bool)
+	return wanted
+}
 
 // errorRecorder is a concurrency-safe way where we can record the first error
 // we get from executing the graphql query.

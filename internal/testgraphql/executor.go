@@ -44,6 +44,12 @@ type ExecutorWrapper struct {
 }
 
 func (e *ExecutorWrapper) Execute(ctx context.Context, typ graphql.Type, source interface{}, query *graphql.Query) (interface{}, error) {
+	// These tests were written when every response carried the __key
+	// correlation fields. They are now emitted only for the live-query diff
+	// protocol, which is what needs them, so the tests ask for them explicitly
+	// and keep asserting what they always asserted.
+	ctx = graphql.WithKeys(ctx)
+
 	var lastOutput interface{}
 	var lastErr error
 	runOnce := false
