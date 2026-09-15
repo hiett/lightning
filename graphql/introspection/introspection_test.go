@@ -1,119 +1,144 @@
 package introspection_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql/introspection"
-	"github.com/hiett/lightning/graphql/schemabuilder"
 	"github.com/hiett/lightning/internal/snapshotter"
+	"github.com/hiett/lightning/relay"
 	"github.com/stretchr/testify/require"
 )
 
 type User struct {
+	lightning.Meta `graphql:"user"`
+
+	Key      string `graphql:"-"`
 	Name     string
 	MaybeAge *int64
 	Uuid     Uuid
 }
 
+func (u *User) NodeID() string { return u.Name }
+
 type Vehicle struct {
+	lightning.Meta `graphql:"Vehicle"`
+
 	Name  string
 	Speed int64
 	Uuid  Uuid
 }
+
 type Asset struct {
+	lightning.Meta `graphql:"Asset"`
+
 	Name         string
 	BatteryLevel int64
 	Uuid         Uuid
 }
 
-type Gateway struct {
-	schemabuilder.Union
+// Gateway is a union over the two.
+type Gateway interface{ isGateway() }
 
-	*Vehicle
-	*Asset
-}
+func (v *Vehicle) isGateway() {}
+func (a *Asset) isGateway()   {}
 
 type enumType int32
 
-func makeSchema() *schemabuilder.Schema {
-	schema := schemabuilder.NewSchema()
-	user := schema.Object("user", User{})
-	user.Key("name")
-	var enumField enumType
-	schema.Enum(enumField, map[string]enumType{
+// GreetArgs shows every argument shape: a required scalar, an optional input
+// object, an enum, and a scalar with a default.
+type GreetArgs struct {
+	Other     string
+	Include   *GreetTarget
+	Enumfield enumType
+	Optional  string `default:""`
+}
+
+type GreetTarget struct {
+	lightning.Meta `graphql:"GreetTarget"`
+
+	Name string
+}
+
+func makeSchema() *lightning.Builder {
+	b := lightning.New(relay.Plugin())
+
+	lightning.Enum(b, "enumType", map[string]enumType{
 		"random":  enumType(3),
 		"random1": enumType(2),
 		"random2": enumType(1),
 	})
-	query := schema.Query()
-	query.FieldFunc("me", func() User {
-		return User{Name: "me"}
-	})
-	query.FieldFunc("noone", func() *User {
-		return &User{Name: "me"}
-	}, schemabuilder.NonNullable)
-	query.FieldFunc("nullableUser", func() (*User, error) {
-		return nil, nil
-	})
-	query.FieldFunc("usersPtrForceNonNullable", func() ([]*User, error) {
-		return nil, nil
-	}, schemabuilder.ListEntryNonNullable)
-	query.FieldFunc("usersPtr", func() ([]*User, error) {
-		return nil, nil
-	})
-	query.FieldFunc("usersConnection", func() ([]User, error) {
-		return nil, nil
-	}, schemabuilder.Paginated)
-	query.FieldFunc("usersConnectionPtr", func() ([]*User, error) {
-		return nil, nil
-	}, schemabuilder.Paginated)
-	query.FieldFunc("userUuid", func() (*Uuid, error) {
-		return nil, nil
-	})
-	query.FieldFunc("usersUuid", func() ([]Uuid, error) {
-		return nil, nil
-	})
 
-	query.FieldFunc("gateway", func() (*Gateway, error) {
+	user := lightning.Object[User](b)
+	relay.Node(b, func(ctx context.Context, id string) (*User, error) { return nil, nil })
+
+	gateway := lightning.Union[Gateway](b)
+	vehicle := lightning.Object[Vehicle](b)
+	asset := lightning.Object[Asset](b)
+	lightning.Implements(gateway, vehicle, func(v *Vehicle) Gateway { return v })
+	lightning.Implements(gateway, asset, func(a *Asset) Gateway { return a })
+
+	query := b.Query()
+	query.Field("me", func(ctx context.Context, _ *lightning.Root) (User, error) {
+		return User{Name: "me"}, nil
+	})
+	query.Field("noone", func(ctx context.Context, _ *lightning.Root) (*User, error) {
+		return &User{Name: "me"}, nil
+	}).NonNull()
+	query.Field("nullableUser", func(ctx context.Context, _ *lightning.Root) (*User, error) {
 		return nil, nil
 	})
-
-	// Add a non-null field after "noone" to test that caching
-	// mechanism in schemabuilder chooses the correct type
-	// for the return value.
-	query.FieldFunc("viewer", func() (User, error) {
+	// A list of values, which is how a list with non-null entries is spelled.
+	query.Field("usersPtrForceNonNullable", func(ctx context.Context, _ *lightning.Root) ([]User, error) {
+		return nil, nil
+	})
+	query.Field("usersPtr", func(ctx context.Context, _ *lightning.Root) ([]*User, error) {
+		return nil, nil
+	})
+	relay.Connection(query, "usersConnection", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]User, error) {
+		return nil, nil
+	})
+	relay.Connection(query, "usersConnectionPtr", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*User, error) {
+		return nil, nil
+	})
+	query.Field("userUuid", func(ctx context.Context, _ *lightning.Root) (*Uuid, error) {
+		return nil, nil
+	})
+	query.Field("usersUuid", func(ctx context.Context, _ *lightning.Root) ([]Uuid, error) {
+		return nil, nil
+	})
+	query.Field("gateway", func(ctx context.Context, _ *lightning.Root) (Gateway, error) {
+		return nil, nil
+	})
+	query.Field("viewer", func(ctx context.Context, _ *lightning.Root) (User, error) {
 		return User{Name: "me"}, nil
 	})
 
-	user.FieldFunc("friends", func(u *User) []*User {
-		return nil
-	}, schemabuilder.ListEntryNonNullable)
-	user.FieldFunc("greet", func(args struct {
-		Other     string
-		Include   *User
-		Enumfield enumType
-		Optional  string `graphql:",optional"`
-	}) string {
-		return ""
+	user.Field("friends", func(ctx context.Context, u *User) ([]User, error) {
+		return nil, nil
+	})
+	user.FieldArgs("greet", func(ctx context.Context, u *User, args GreetArgs) (string, error) {
+		return "", nil
 	})
 
-	mutation := schema.Mutation()
-	mutation.FieldFunc("sayHi", func() {})
+	b.Mutation().Field("sayHi", func(ctx context.Context, _ *lightning.Root) (bool, error) {
+		return true, nil
+	})
 
-	return schema
+	return b
 }
 
 func TestComputeSchemaJSON(t *testing.T) {
 	snap := snapshotter.New(t)
 	defer snap.Verify()
-	schemaBuilderSchema := makeSchema()
 
-	actualBytes, err := introspection.ComputeSchemaJSON(schemaBuilderSchema.MustBuild())
+	actualBytes, err := introspection.ComputeSchemaJSON(makeSchema().MustBuild())
 	require.NoError(t, err)
 
 	var actual map[string]interface{}
-	json.Unmarshal(actualBytes, &actual)
+	require.NoError(t, json.Unmarshal(actualBytes, &actual))
 	snap.Snapshot("schema", actual)
 }
 

@@ -178,6 +178,41 @@
               "description": "",
               "enumValues": [],
               "fields": [],
+              "inputFields": [
+                {
+                  "defaultValue": null,
+                  "description": "",
+                  "name": "name",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              ],
+              "interfaces": [],
+              "kind": "INPUT_OBJECT",
+              "name": "GreetTarget",
+              "possibleTypes": []
+            },
+            {
+              "description": "",
+              "enumValues": [],
+              "fields": [],
+              "inputFields": [],
+              "interfaces": [],
+              "kind": "SCALAR",
+              "name": "ID",
+              "possibleTypes": []
+            },
+            {
+              "description": "",
+              "enumValues": [],
+              "fields": [],
               "inputFields": [],
               "interfaces": [],
               "kind": "SCALAR",
@@ -222,13 +257,46 @@
               "possibleTypes": []
             },
             {
-              "description": "",
+              "description": "An object with a globally unique identifier, which a client can refetch with the node field.",
               "enumValues": [],
               "fields": [
                 {
                   "args": [],
                   "deprecationReason": "",
-                  "description": "",
+                  "description": "A globally unique identifier.",
+                  "isDeprecated": false,
+                  "name": "id",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  }
+                }
+              ],
+              "inputFields": [],
+              "interfaces": [],
+              "kind": "INTERFACE",
+              "name": "Node",
+              "possibleTypes": [
+                {
+                  "kind": "OBJECT",
+                  "name": "user",
+                  "ofType": null
+                }
+              ]
+            },
+            {
+              "description": "Where a page sits in the whole list.",
+              "enumValues": [],
+              "fields": [
+                {
+                  "args": [],
+                  "deprecationReason": "",
+                  "description": "The cursor of the last item in this page, or null if it is empty.",
                   "isDeprecated": false,
                   "name": "endCursor",
                   "type": {
@@ -240,7 +308,7 @@
                 {
                   "args": [],
                   "deprecationReason": "",
-                  "description": "",
+                  "description": "Whether more items follow this page.",
                   "isDeprecated": false,
                   "name": "hasNextPage",
                   "type": {
@@ -256,7 +324,7 @@
                 {
                   "args": [],
                   "deprecationReason": "",
-                  "description": "",
+                  "description": "Whether more items precede this page.",
                   "isDeprecated": false,
                   "name": "hasPreviousPage",
                   "type": {
@@ -272,7 +340,7 @@
                 {
                   "args": [],
                   "deprecationReason": "",
-                  "description": "",
+                  "description": "The cursor each page of the whole list starts at, for page-number pagination. An extension; Relay ignores it.",
                   "isDeprecated": false,
                   "name": "pages",
                   "type": {
@@ -296,7 +364,7 @@
                 {
                   "args": [],
                   "deprecationReason": "",
-                  "description": "",
+                  "description": "The cursor of the first item in this page, or null if it is empty.",
                   "isDeprecated": false,
                   "name": "startCursor",
                   "type": {
@@ -345,6 +413,76 @@
                   }
                 },
                 {
+                  "args": [
+                    {
+                      "defaultValue": null,
+                      "description": "The object's global identifier.",
+                      "name": "id",
+                      "type": {
+                        "kind": "NON_NULL",
+                        "name": null,
+                        "ofType": {
+                          "kind": "SCALAR",
+                          "name": "ID",
+                          "ofType": null
+                        }
+                      }
+                    }
+                  ],
+                  "deprecationReason": "",
+                  "description": "Looks up a single object by its global identifier.",
+                  "isDeprecated": false,
+                  "name": "node",
+                  "type": {
+                    "kind": "INTERFACE",
+                    "name": "Node",
+                    "ofType": null
+                  }
+                },
+                {
+                  "args": [
+                    {
+                      "defaultValue": null,
+                      "description": "The objects' global identifiers.",
+                      "name": "ids",
+                      "type": {
+                        "kind": "NON_NULL",
+                        "name": null,
+                        "ofType": {
+                          "kind": "LIST",
+                          "name": null,
+                          "ofType": {
+                            "kind": "NON_NULL",
+                            "name": null,
+                            "ofType": {
+                              "kind": "SCALAR",
+                              "name": "ID",
+                              "ofType": null
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "deprecationReason": "",
+                  "description": "Looks up several objects by their global identifiers, in the order given.",
+                  "isDeprecated": false,
+                  "name": "nodes",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "LIST",
+                      "name": null,
+                      "ofType": {
+                        "kind": "INTERFACE",
+                        "name": "Node",
+                        "ofType": null
+                      }
+                    }
+                  }
+                },
+                {
                   "args": [],
                   "deprecationReason": "",
                   "description": "",
@@ -388,7 +526,7 @@
                   "args": [
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": "Return items after this cursor.",
                       "name": "after",
                       "type": {
                         "kind": "SCALAR",
@@ -398,7 +536,7 @@
                     },
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": "Return items before this cursor.",
                       "name": "before",
                       "type": {
                         "kind": "SCALAR",
@@ -408,45 +546,7 @@
                     },
                     {
                       "defaultValue": null,
-                      "description": "",
-                      "name": "filterText",
-                      "type": {
-                        "kind": "SCALAR",
-                        "name": "String",
-                        "ofType": null
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
-                      "name": "filterTextFields",
-                      "type": {
-                        "kind": "LIST",
-                        "name": null,
-                        "ofType": {
-                          "kind": "NON_NULL",
-                          "name": null,
-                          "ofType": {
-                            "kind": "SCALAR",
-                            "name": "String",
-                            "ofType": null
-                          }
-                        }
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
-                      "name": "filterType",
-                      "type": {
-                        "kind": "SCALAR",
-                        "name": "String",
-                        "ofType": null
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
+                      "description": "Return the first n items.",
                       "name": "first",
                       "type": {
                         "kind": "SCALAR",
@@ -456,31 +556,11 @@
                     },
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": "Return the last n items.",
                       "name": "last",
                       "type": {
                         "kind": "SCALAR",
                         "name": "Int",
-                        "ofType": null
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
-                      "name": "sortBy",
-                      "type": {
-                        "kind": "SCALAR",
-                        "name": "String",
-                        "ofType": null
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
-                      "name": "sortOrder",
-                      "type": {
-                        "kind": "ENUM",
-                        "name": "SortOrder",
                         "ofType": null
                       }
                     }
@@ -503,7 +583,7 @@
                   "args": [
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": "Return items after this cursor.",
                       "name": "after",
                       "type": {
                         "kind": "SCALAR",
@@ -513,7 +593,7 @@
                     },
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": "Return items before this cursor.",
                       "name": "before",
                       "type": {
                         "kind": "SCALAR",
@@ -523,45 +603,7 @@
                     },
                     {
                       "defaultValue": null,
-                      "description": "",
-                      "name": "filterText",
-                      "type": {
-                        "kind": "SCALAR",
-                        "name": "String",
-                        "ofType": null
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
-                      "name": "filterTextFields",
-                      "type": {
-                        "kind": "LIST",
-                        "name": null,
-                        "ofType": {
-                          "kind": "NON_NULL",
-                          "name": null,
-                          "ofType": {
-                            "kind": "SCALAR",
-                            "name": "String",
-                            "ofType": null
-                          }
-                        }
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
-                      "name": "filterType",
-                      "type": {
-                        "kind": "SCALAR",
-                        "name": "String",
-                        "ofType": null
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
+                      "description": "Return the first n items.",
                       "name": "first",
                       "type": {
                         "kind": "SCALAR",
@@ -571,31 +613,11 @@
                     },
                     {
                       "defaultValue": null,
-                      "description": "",
+                      "description": "Return the last n items.",
                       "name": "last",
                       "type": {
                         "kind": "SCALAR",
                         "name": "Int",
-                        "ofType": null
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
-                      "name": "sortBy",
-                      "type": {
-                        "kind": "SCALAR",
-                        "name": "String",
-                        "ofType": null
-                      }
-                    },
-                    {
-                      "defaultValue": null,
-                      "description": "",
-                      "name": "sortOrder",
-                      "type": {
-                        "kind": "ENUM",
-                        "name": "SortOrder",
                         "ofType": null
                       }
                     }
@@ -707,84 +729,12 @@
             },
             {
               "description": "",
-              "enumValues": [
-                {
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "asc"
-                },
-                {
-                  "deprecationReason": "",
-                  "description": "",
-                  "isDeprecated": false,
-                  "name": "desc"
-                }
-              ],
-              "fields": [],
-              "inputFields": [],
-              "interfaces": [],
-              "kind": "ENUM",
-              "name": "SortOrder",
-              "possibleTypes": []
-            },
-            {
-              "description": "",
               "enumValues": [],
               "fields": [],
               "inputFields": [],
               "interfaces": [],
               "kind": "SCALAR",
               "name": "String",
-              "possibleTypes": []
-            },
-            {
-              "description": "",
-              "enumValues": [],
-              "fields": [],
-              "inputFields": [
-                {
-                  "defaultValue": null,
-                  "description": "",
-                  "name": "maybeAge",
-                  "type": {
-                    "kind": "SCALAR",
-                    "name": "Int64",
-                    "ofType": null
-                  }
-                },
-                {
-                  "defaultValue": null,
-                  "description": "",
-                  "name": "name",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "SCALAR",
-                      "name": "String",
-                      "ofType": null
-                    }
-                  }
-                },
-                {
-                  "defaultValue": null,
-                  "description": "",
-                  "name": "uuid",
-                  "type": {
-                    "kind": "NON_NULL",
-                    "name": null,
-                    "ofType": {
-                      "kind": "SCALAR",
-                      "name": "String",
-                      "ofType": null
-                    }
-                  }
-                }
-              ],
-              "interfaces": [],
-              "kind": "INPUT_OBJECT",
-              "name": "User_InputObject",
               "possibleTypes": []
             },
             {
@@ -925,7 +875,7 @@
                       "name": "include",
                       "type": {
                         "kind": "INPUT_OBJECT",
-                        "name": "User_InputObject",
+                        "name": "GreetTarget",
                         "ofType": null
                       }
                     },
@@ -964,6 +914,22 @@
                     "ofType": {
                       "kind": "SCALAR",
                       "name": "String",
+                      "ofType": null
+                    }
+                  }
+                },
+                {
+                  "args": [],
+                  "deprecationReason": "",
+                  "description": "A globally unique identifier, which node(id:) resolves back to this object.",
+                  "isDeprecated": false,
+                  "name": "id",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
                       "ofType": null
                     }
                   }
@@ -1014,7 +980,13 @@
                 }
               ],
               "inputFields": [],
-              "interfaces": [],
+              "interfaces": [
+                {
+                  "kind": "INTERFACE",
+                  "name": "Node",
+                  "ofType": null
+                }
+              ],
               "kind": "OBJECT",
               "name": "user",
               "possibleTypes": []
@@ -1026,7 +998,7 @@
                 {
                   "args": [],
                   "deprecationReason": "",
-                  "description": "",
+                  "description": "The items in this page, each with its cursor.",
                   "isDeprecated": false,
                   "name": "edges",
                   "type": {
@@ -1050,7 +1022,7 @@
                 {
                   "args": [],
                   "deprecationReason": "",
-                  "description": "",
+                  "description": "Where this page sits in the whole list.",
                   "isDeprecated": false,
                   "name": "pageInfo",
                   "type": {
@@ -1066,7 +1038,7 @@
                 {
                   "args": [],
                   "deprecationReason": "",
-                  "description": "",
+                  "description": "How many items the whole list holds. An extension; Relay ignores it.",
                   "isDeprecated": false,
                   "name": "totalCount",
                   "type": {
