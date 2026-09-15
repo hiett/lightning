@@ -3,6 +3,7 @@ package lightning
 import (
 	"fmt"
 	"reflect"
+	"sort"
 
 	"github.com/hiett/lightning/graphql"
 )
@@ -197,7 +198,7 @@ func (b *Builder) buildObject(decl *typeDecl) (graphql.Type, error) {
 	b.built[decl] = object
 
 	if decl.exposeAll {
-		if err := b.exposeStructFields(decl, object); err != nil {
+		if err := b.exposeStructFields(decl, decl.goType, object); err != nil {
 			return nil, err
 		}
 	}
@@ -211,7 +212,15 @@ func (b *Builder) buildObject(decl *typeDecl) (graphql.Type, error) {
 			return nil, fmt.Errorf("%s declares the field %s twice", decl.name, field.name)
 		}
 		object.Fields[field.name] = built
+		if field.sortable {
+			decl.sortable = append(decl.sortable, field.name)
+		}
+		if field.filterable {
+			decl.filterable = append(decl.filterable, field.name)
+		}
 	}
+	sort.Strings(decl.sortable)
+	sort.Strings(decl.filterable)
 
 	if len(object.Fields) == 0 {
 		return nil, fmt.Errorf("%s has no fields; a GraphQL type needs at least one", decl.name)
@@ -226,8 +235,10 @@ func (b *Builder) buildObject(decl *typeDecl) (graphql.Type, error) {
 //
 // This is the reason a plain data type needs no declarations: the struct is
 // already a complete description of itself.
-func (b *Builder) exposeStructFields(decl *typeDecl, object *graphql.Object) error {
-	goType := decl.goType
+// The declaration whose sortable and filterable fields are being collected is
+// passed separately from the struct being walked, because an embedded struct
+// contributes its fields to the type that embeds it.
+func (b *Builder) exposeStructFields(decl *typeDecl, goType reflect.Type, object *graphql.Object) error {
 	for i := 0; i < goType.NumField(); i++ {
 		field := goType.Field(i)
 
@@ -256,7 +267,7 @@ func (b *Builder) exposeStructFields(decl *typeDecl, object *graphql.Object) err
 		if field.Anonymous && field.Type.Kind() == reflect.Struct && !named {
 			inner := b.declare(field.Type, kindObject)
 			inner.exposeAll = true
-			if err := b.exposeStructFields(inner, object); err != nil {
+			if err := b.exposeStructFields(decl, inner.goType, object); err != nil {
 				return err
 			}
 			continue
@@ -265,6 +276,13 @@ func (b *Builder) exposeStructFields(decl *typeDecl, object *graphql.Object) err
 		fieldType, err := b.graphQLType(field.Type, fmt.Sprintf("%s.%s", decl.name, docs.name))
 		if err != nil {
 			return err
+		}
+
+		if docs.sortable {
+			decl.sortable = append(decl.sortable, docs.name)
+		}
+		if docs.filterable {
+			decl.filterable = append(decl.filterable, docs.name)
 		}
 
 		index := i

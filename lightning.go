@@ -192,6 +192,13 @@ type typeDecl struct {
 
 	// keyField identifies one value of this type for the live-query diff.
 	keyField *graphql.Field
+
+	// sortable and filterable name the fields a paginated list over this type
+	// may be ordered by, and the fields whose text it may be searched by. They
+	// are collected as the type is built, from struct tags and from field
+	// declarations alike, so that a plugin reads one answer rather than two.
+	sortable   []string
+	filterable []string
 }
 
 type enumValue struct {
@@ -212,6 +219,9 @@ type fieldDecl struct {
 	goResult reflect.Type
 	// goArgs is the Go struct the resolver takes as arguments, or nil.
 	goArgs reflect.Type
+	// goArgsOf computes that struct during Build, for a plugin whose arguments
+	// depend on what the application declared.
+	goArgsOf func(*Builder) (reflect.Type, error)
 
 	resolve graphql.Resolver
 
@@ -225,6 +235,11 @@ type fieldDecl struct {
 	// source names where the field came from, for error messages: a struct
 	// field, or the call site of a Field declaration.
 	source string
+
+	// sortable and filterable say that a paginated list over this type may be
+	// ordered by this field, or searched by its text.
+	sortable   bool
+	filterable bool
 
 	// meta carries per-field plugin data.
 	meta map[string]any

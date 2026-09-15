@@ -222,6 +222,21 @@ func (f *Field) Expensive() *Field {
 	return f
 }
 
+// Sortable says a paginated list over the parent type may be ordered by this
+// field, which is the declaration form of the `sortable:"true"` struct tag.
+func (f *Field) Sortable() *Field {
+	f.decl.sortable = true
+	return f
+}
+
+// Filterable says a paginated list over the parent type may be searched by this
+// field's text, which is the declaration form of the `filterable:"true"` struct
+// tag. The field must resolve to a string.
+func (f *Field) Filterable() *Field {
+	f.decl.filterable = true
+	return f
+}
+
 // Meta attaches plugin data to the field. The key should be namespaced by the
 // plugin that owns it.
 func (f *Field) Meta(key string, value any) *Field {
@@ -240,6 +255,12 @@ func (i FieldInfo) Name() string { return i.decl.name }
 
 // GoResult returns the Go type the field's resolver returns.
 func (i FieldInfo) GoResult() reflect.Type { return i.decl.goResult }
+
+// Sortable reports whether a paginated list may be ordered by this field.
+func (i FieldInfo) Sortable() bool { return i.decl.sortable }
+
+// Filterable reports whether a paginated list may be searched by this field.
+func (i FieldInfo) Filterable() bool { return i.decl.filterable }
 
 // Meta returns plugin data attached to the field.
 func (i FieldInfo) Meta(key string) (any, bool) {
@@ -308,8 +329,15 @@ func (b *Builder) buildField(parent *typeDecl, decl *fieldDecl) (*graphql.Field,
 		field.External = true
 	}
 
-	if decl.goArgs != nil {
-		args, parse, descriptions, err := b.buildArguments(decl.goArgs, at)
+	goArgs := decl.goArgs
+	if decl.goArgsOf != nil {
+		goArgs, err = decl.goArgsOf(b)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if goArgs != nil {
+		args, parse, descriptions, err := b.buildArguments(goArgs, at)
 		if err != nil {
 			return nil, err
 		}

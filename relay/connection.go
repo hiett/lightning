@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
-	"sort"
 
 	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/graphql"
@@ -33,6 +32,32 @@ type Page struct {
 	// After and Before are cursors bounding the page, if given.
 	After  *string
 	Before *string
+
+	// SortBy names the field the client asked to order by, and SortOrder which
+	// way round. They are set only when the node type declares something
+	// sortable, and a plain Connection applies them itself — a resolver reads
+	// them to push the work down to wherever the list comes from, and doing so
+	// changes nothing, because ordering an ordered list is a no-op.
+	SortBy    *string
+	SortOrder SortOrder
+
+	// FilterText is the text the client asked to search for, and
+	// FilterTextFields restricts which of the node type's filterable fields it
+	// searches. As with the sort, a plain Connection applies them itself.
+	FilterText       *string
+	FilterTextFields []string
+}
+
+// size is the page size the client asked for, or zero if it asked for none.
+func (p Page) size() int {
+	switch {
+	case p.First != nil:
+		return int(*p.First)
+	case p.Last != nil:
+		return int(*p.Last)
+	default:
+		return 0
+	}
 }
 
 // Limit reports how many items the page should hold, after the plugin's cap.
@@ -72,18 +97,66 @@ type edge struct {
 // The element type must be a registered node, because its Node identifier is
 // what the cursors are built from.
 func Connection[P, T any](parent *lightning.Type[P], name string, resolve func(ctx context.Context, p *P, page Page) ([]T, error)) *lightning.Field {
-	return connection(parent, name, func(ctx context.Context, p *P, page Page, _ struct{}) ([]T, error) {
-		return resolve(ctx, p, page)
+	return connection(parent, name, func(ctx context.Context, p *P, page Page, _ struct{}) ([]T, *PageResult, error) {
+		items, err := resolve(ctx, p, page)
+		return items, nil, err
 	})
 }
 
 // ConnectionArgs is Connection for a field that takes arguments of its own,
 // alongside the pagination arguments.
 func ConnectionArgs[P, T, A any](parent *lightning.Type[P], name string, resolve func(ctx context.Context, p *P, page Page, args A) ([]T, error)) *lightning.Field {
-	return connection(parent, name, resolve)
+	return connection(parent, name, func(ctx context.Context, p *P, page Page, args A) ([]T, *PageResult, error) {
+		items, err := resolve(ctx, p, page, args)
+		return items, nil, err
+	})
 }
 
-func connection[P, T, A any](parent *lightning.Type[P], name string, resolve func(ctx context.Context, p *P, page Page, args A) ([]T, error)) *lightning.Field {
+// PageResult is what a resolver that pages the list itself reports back about
+// the page it returned.
+//
+// It exists because a resolver that pages in the database knows things the
+// plugin cannot see: how many rows matched, and whether another page follows.
+// Asking for one extra row is the usual way to find out.
+type PageResult struct {
+	// TotalCount is how many items the whole list holds, before paging.
+	TotalCount int64
+	// HasNextPage and HasPreviousPage say whether anything lies beyond this
+	// page in either direction.
+	HasNextPage     bool
+	HasPreviousPage bool
+	// Pages optionally lists the cursor each page of the whole list starts at.
+	Pages []string
+}
+
+// ManualConnection declares a connection whose resolver does its own paging.
+//
+// The resolver is given the page the client asked for and returns exactly the
+// items in it, along with what it knows about the whole list. The plugin adds
+// the cursors and nothing else: it does not narrow, order or trim what came
+// back, because a resolver that paged in the database has already done so.
+//
+//	relay.ManualConnection(q, "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, relay.PageResult, error) {
+//	    rows, total, more := store.PageTasks(ctx, p)
+//	    return rows, relay.PageResult{TotalCount: total, HasNextPage: more}, nil
+//	})
+func ManualConnection[P, T any](parent *lightning.Type[P], name string, resolve func(ctx context.Context, p *P, page Page) ([]T, PageResult, error)) *lightning.Field {
+	return connection(parent, name, func(ctx context.Context, p *P, page Page, _ struct{}) ([]T, *PageResult, error) {
+		items, result, err := resolve(ctx, p, page)
+		return items, &result, err
+	})
+}
+
+// ManualConnectionArgs is ManualConnection for a field that takes arguments of
+// its own.
+func ManualConnectionArgs[P, T, A any](parent *lightning.Type[P], name string, resolve func(ctx context.Context, p *P, page Page, args A) ([]T, PageResult, error)) *lightning.Field {
+	return connection(parent, name, func(ctx context.Context, p *P, page Page, args A) ([]T, *PageResult, error) {
+		items, result, err := resolve(ctx, p, page, args)
+		return items, &result, err
+	})
+}
+
+func connection[P, T, A any](parent *lightning.Type[P], name string, resolve func(ctx context.Context, p *P, page Page, args A) ([]T, *PageResult, error)) *lightning.Field {
 	b := parent.Builder()
 
 	r, err := find(b)
@@ -97,9 +170,21 @@ func connection[P, T, A any](parent *lightning.Type[P], name string, resolve fun
 		elemType = elemType.Elem()
 	}
 
-	// The connection's own arguments are the pagination ones plus whatever the
-	// resolver asks for, merged into one struct so the client sees one list.
-	return parent.RawFieldArgs(name, mergedArgs[A](), func(ctx context.Context, source, rawArgs any, _ *graphql.SelectionSet) (any, error) {
+	// What a connection can be ordered and searched by comes from the node
+	// type, so it is not known until the node type has been built.
+	var spec *sortFilter
+
+	// The connection's own arguments are the pagination ones, whatever the node
+	// type declared sortable or filterable, and whatever the resolver asks for,
+	// merged into one struct so the client sees one list.
+	return parent.RawFieldArgsOf(name, func(b *lightning.Builder) (reflect.Type, error) {
+		found, err := sortFilterFor(b, elemType)
+		if err != nil {
+			return nil, err
+		}
+		spec = found
+		return mergedArgs[A](spec), nil
+	}, func(ctx context.Context, source, rawArgs any, _ *graphql.SelectionSet) (any, error) {
 		page, extra, err := splitArgs[A](rawArgs)
 		if err != nil {
 			return nil, err
@@ -110,41 +195,39 @@ func connection[P, T, A any](parent *lightning.Type[P], name string, resolve fun
 			return nil, nil
 		}
 
-		items, err := resolve(ctx, p, page, extra)
+		items, result, err := resolve(ctx, p, page, extra)
 		if err != nil {
 			return nil, err
 		}
 
-		return r.paginate(ctx, elemType, items, page)
+		return r.paginate(ctx, elemType, items, page, spec, result)
 	}, func(b *lightning.Builder) (graphql.Type, error) {
 		return r.connectionType(b, elemType)
 	})
 }
 
 // paginate turns a resolved list into a connection.
-func (r *Relay) paginate(ctx context.Context, elemType reflect.Type, items any, page Page) (any, error) {
-	node, ok := r.nodes[elemType]
-	if !ok {
-		return nil, fmt.Errorf("a connection over %s needs it to be a node; register it with relay.Node", typeName(elemType))
+func (r *Relay) paginate(ctx context.Context, elemType reflect.Type, items any, page Page, spec *sortFilter, manual *PageResult) (any, error) {
+	edges, err := r.edgesOf(ctx, elemType, items, page, spec, manual == nil)
+	if err != nil {
+		return nil, err
 	}
 
-	list := reflect.ValueOf(items)
-	edges := make([]edge, 0, list.Len())
-	for i := 0; i < list.Len(); i++ {
-		value := list.Index(i).Interface()
-		localID, err := node.localID(ctx, value)
-		if err != nil {
-			return nil, err
-		}
-		edges = append(edges, edge{
-			node: value,
-			// The cursor names the item, so it keeps meaning when the list
-			// changes: base64 only so that it reads as opaque.
-			cursor: base64.StdEncoding.EncodeToString([]byte(localID)),
-		})
+	// A resolver that paged the list itself has already answered every question
+	// the plugin would ask by inspecting the list, and it can answer them about
+	// the whole list rather than only the part that came back.
+	if manual != nil {
+		return &connectionValue{
+			totalCount:      manual.TotalCount,
+			edges:           edges,
+			pages:           orEmpty(manual.Pages),
+			hasNextPage:     manual.HasNextPage,
+			hasPreviousPage: manual.HasPreviousPage,
+		}, nil
 	}
 
 	total := int64(len(edges))
+	pages := pagesFromEdges(edges, page.size())
 	edges, hasPrevious, hasNext := applyCursors(edges, page)
 
 	limit := int(page.Limit(r.maxPageSize))
@@ -161,9 +244,78 @@ func (r *Relay) paginate(ctx context.Context, elemType reflect.Type, items any, 
 	return &connectionValue{
 		totalCount:      total,
 		edges:           edges,
+		pages:           pages,
 		hasNextPage:     hasNext,
 		hasPreviousPage: hasPrevious,
 	}, nil
+}
+
+// orEmpty turns a nil list into an empty one, because the schema says the field
+// is a list and never null.
+func orEmpty(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
+// edgesOf narrows, orders and labels a resolved list.
+func (r *Relay) edgesOf(ctx context.Context, elemType reflect.Type, items any, page Page, spec *sortFilter, narrow bool) ([]edge, error) {
+	node, ok := r.nodes[elemType]
+	if !ok {
+		return nil, fmt.Errorf("a connection over %s needs it to be a node; register it with relay.Node", typeName(elemType))
+	}
+
+	list := reflect.ValueOf(items)
+	nodes := make([]any, 0, list.Len())
+	for i := 0; i < list.Len(); i++ {
+		nodes = append(nodes, list.Index(i).Interface())
+	}
+
+	if narrow && spec.sortsOrFilters() {
+		var err error
+		nodes, err = spec.apply(ctx, nodes, page)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	edges := make([]edge, 0, len(nodes))
+	for _, value := range nodes {
+		localID, err := node.localID(ctx, value)
+		if err != nil {
+			return nil, err
+		}
+		edges = append(edges, edge{
+			node: value,
+			// The cursor names the item, so it keeps meaning when the list
+			// changes: base64 only so that it reads as opaque.
+			cursor: base64.StdEncoding.EncodeToString([]byte(localID)),
+		})
+	}
+	return edges, nil
+}
+
+// pagesFromEdges lists the cursor each page of the whole list starts at, so a
+// client can offer page numbers.
+//
+// The first entry is the empty cursor, meaning the start of the list. It is an
+// extension rather than part of the Relay specification, and a Relay client
+// ignores it.
+func pagesFromEdges(edges []edge, size int) []string {
+	if len(edges) == 0 {
+		return []string{}
+	}
+	pages := []string{""}
+	if size <= 0 {
+		return pages
+	}
+	for i := 0; i+1 < len(edges); i++ {
+		if (i+1)%size == 0 {
+			pages = append(pages, edges[i].cursor)
+		}
+	}
+	return pages
 }
 
 // applyCursors narrows a list to the range the cursors bound, reporting whether
@@ -204,6 +356,7 @@ func indexOfCursor(edges []edge, cursor string) int {
 type connectionValue struct {
 	totalCount      int64
 	edges           []edge
+	pages           []string
 	hasNextPage     bool
 	hasPreviousPage bool
 }
@@ -344,6 +497,14 @@ func pageInfoType() *graphql.Object {
 				}
 				return &c.edges[len(c.edges)-1].cursor
 			}, "The cursor of the last item in this page, or null if it is empty."),
+			"pages": {
+				Type:           &graphql.NonNull{Type: &graphql.List{Type: &graphql.NonNull{Type: &graphql.Scalar{Type: "String"}}}},
+				Description:    "The cursor each page of the whole list starts at, for page-number pagination. An extension; Relay ignores it.",
+				ParseArguments: noArguments,
+				Resolve: func(ctx context.Context, source, _ any, _ *graphql.SelectionSet) (any, error) {
+					return source.(*connectionValue).pages, nil
+				},
+			},
 		},
 	}
 }
@@ -361,7 +522,7 @@ func unwrapNonNull(t graphql.Type) graphql.Type {
 
 // mergedArgs returns the Go type holding the pagination arguments alongside the
 // resolver's own.
-func mergedArgs[A any]() reflect.Type {
+func mergedArgs[A any](spec *sortFilter) reflect.Type {
 	extra := reflect.TypeFor[A]()
 	fields := []reflect.StructField{
 		{Name: "First", Type: reflect.TypeFor[*int32](), Tag: `description:"Return the first n items."`},
@@ -369,6 +530,7 @@ func mergedArgs[A any]() reflect.Type {
 		{Name: "After", Type: reflect.TypeFor[*string](), Tag: `description:"Return items after this cursor."`},
 		{Name: "Before", Type: reflect.TypeFor[*string](), Tag: `description:"Return items before this cursor."`},
 	}
+	fields = append(fields, spec.argFields()...)
 
 	if extra.Kind() == reflect.Struct {
 		for i := 0; i < extra.NumField(); i++ {
@@ -383,7 +545,8 @@ func mergedArgs[A any]() reflect.Type {
 	return reflect.StructOf(fields)
 }
 
-// splitArgs separates the pagination arguments from the resolver's own.
+// splitArgs separates the pagination arguments, the search arguments and the
+// resolver's own.
 func splitArgs[A any](raw any) (Page, A, error) {
 	var extra A
 
@@ -412,7 +575,6 @@ func splitArgs[A any](raw any) (Page, A, error) {
 		extra = out.Interface().(A)
 	}
 
+	readSearch(value, &page)
 	return page, extra, nil
 }
-
-var _ = sort.Strings

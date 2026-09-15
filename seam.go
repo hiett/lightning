@@ -55,6 +55,23 @@ func (t *Type[T]) RawFieldArgs(
 	return &Field{b: t.b, parent: t.decl, decl: decl}
 }
 
+// RawFieldArgsOf is RawFieldArgs for a field whose argument struct is itself
+// computed during Build.
+//
+// relay needs it: which arguments a connection takes depends on what the node
+// type declared sortable and filterable, and that is not known until the node
+// type has been built.
+func (t *Type[T]) RawFieldArgsOf(
+	name string,
+	argsOf func(*Builder) (reflect.Type, error),
+	resolve graphql.Resolver,
+	typeOf func(*Builder) (graphql.Type, error),
+) *Field {
+	field := t.RawFieldArgs(name, nil, resolve, typeOf)
+	field.decl.goArgsOf = argsOf
+	return field
+}
+
 // Placeholder returns a Field that records nothing, for a plugin that has
 // already reported an error and needs something to return.
 func (t *Type[T]) Placeholder(name string) *Field {

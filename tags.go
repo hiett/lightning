@@ -46,6 +46,8 @@ var knownTagKeys = map[string]bool{
 	"description": true,
 	"deprecated":  true,
 	"default":     true,
+	"sortable":    true,
+	"filterable":  true,
 }
 
 // likelyTagKeys are misspellings common enough to be worth naming.
@@ -57,6 +59,11 @@ var likelyTagKeys = map[string]string{
 	"deprecation": "deprecated",
 	"name":        "graphql",
 	"gql":         "graphql",
+	"sort":        "sortable",
+	"sortby":      "sortable",
+	"filter":      "filterable",
+	"filterable?": "filterable",
+	"searchable":  "filterable",
 }
 
 // typeDocs is what a type's marker field says about it.
@@ -102,6 +109,13 @@ type fieldDocs struct {
 	defaultText string
 	hasDefault  bool
 	skip        bool
+
+	// sortable and filterable say that a paginated list may be ordered by this
+	// field, or searched by its text. They live on the field because that is
+	// where the answer is: whether a title can be searched is a fact about the
+	// title, not about every list that happens to contain one.
+	sortable   bool
+	filterable bool
 }
 
 // readFieldDocs reads one struct field's tags.
@@ -142,7 +156,34 @@ func readFieldDocs(field reflect.StructField) (fieldDocs, error) {
 		docs.hasDefault = true
 	}
 
+	var err error
+	if docs.sortable, err = boolTag(field, "sortable"); err != nil {
+		return docs, err
+	}
+	if docs.filterable, err = boolTag(field, "filterable"); err != nil {
+		return docs, err
+	}
+
 	return docs, nil
+}
+
+// boolTag reads a tag whose whole content is a yes or a no.
+//
+// An empty value means yes, so `sortable:""` and `sortable:"true"` say the same
+// thing; anything else is reported rather than guessed at, because a tag that
+// silently means the opposite of what it reads is worse than no tag.
+func boolTag(field reflect.StructField, key string) (bool, error) {
+	text, ok := field.Tag.Lookup(key)
+	if !ok {
+		return false, nil
+	}
+	switch strings.ToLower(text) {
+	case "", "true", "yes":
+		return true, nil
+	case "false", "no":
+		return false, nil
+	}
+	return false, fmt.Errorf("field %s has %s:%q; it should be \"true\" or \"false\"", field.Name, key, text)
 }
 
 // checkTagKeys reports a struct tag key that was probably meant to be one this

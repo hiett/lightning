@@ -412,3 +412,15 @@ func TestKeysTravelOnlyWhenAsked(t *testing.T) {
 	keyed := execute(graphql.WithKeys(context.Background()))
 	require.Equal(t, "t1", keyed["__key"])
 }
+
+// runErr executes a query and returns its error rather than failing the test.
+func runErr(t *testing.T, schema *graphql.Schema, query string) (any, error) {
+	t.Helper()
+
+	q, err := graphql.Parse(query, nil)
+	require.NoError(t, err)
+	require.NoError(t, graphql.PrepareQuery(context.Background(), schema.Query, q.SelectionSet))
+
+	e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
+	return e.Execute(context.Background(), schema.Query, nil, q)
+}

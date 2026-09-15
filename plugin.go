@@ -142,6 +142,14 @@ func (d DeclaredType) HasField(name string) bool {
 	return false
 }
 
+// SortableFields names the fields a paginated list over this type may be
+// ordered by, in schema order. It is complete only once the type is built.
+func (d DeclaredType) SortableFields() []string { return d.decl.sortable }
+
+// FilterableFields names the fields whose text a paginated list over this type
+// may be searched by. It is complete only once the type is built.
+func (d DeclaredType) FilterableFields() []string { return d.decl.filterable }
+
 // Meta returns plugin data attached to the type.
 func (d DeclaredType) Meta(key string) (any, bool) {
 	v, ok := d.decl.meta[key]

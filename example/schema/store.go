@@ -24,10 +24,10 @@ type Task struct {
 	lightning.Meta `graphql:"Task" description:"A unit of work."`
 
 	Key     string    `graphql:"-"`
-	Title   string    `description:"What needs doing."`
-	Done    bool      `description:"Whether it has been done."`
+	Title   string    `description:"What needs doing." sortable:"true" filterable:"true"`
+	Done    bool      `description:"Whether it has been done." sortable:"true"`
 	OwnerID string    `graphql:"-"`
-	Added   time.Time `description:"When it was added."`
+	Added   time.Time `description:"When it was added." sortable:"true"`
 }
 
 // NodeID gives the task its type-local identifier, which is all relay.Node

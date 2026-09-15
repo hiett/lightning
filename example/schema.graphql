@@ -79,6 +79,10 @@ type PageInfo {
   """
   hasPreviousPage: Boolean!
   """
+  The cursor each page of the whole list starts at, for page-number pagination. An extension; Relay ignores it.
+  """
+  pages: [String!]!
+  """
   The cursor of the first item in this page, or null if it is empty.
   """
   startCursor: String
@@ -116,6 +120,14 @@ type Query {
     """
     before: String
     """
+    Keep only items matching this text, searching title. Quote a phrase to match it whole.
+    """
+    filterText: String
+    """
+    Which fields filterText searches. All of them by default.
+    """
+    filterTextFields: [String!]
+    """
     Return the first n items.
     """
     first: Int
@@ -123,11 +135,27 @@ type Query {
     Return the last n items.
     """
     last: Int
+    """
+    Order by one of: added, done, title.
+    """
+    sortBy: String
+    """
+    Which way round to order. Ascending by default.
+    """
+    sortOrder: SortOrder
   ): TaskConnection!
   """
   The signed-in user. This example always signs in as Ada.
   """
   viewer: User
+}
+
+"""
+Which way round a sorted list runs.
+"""
+enum SortOrder {
+  asc
+  desc
 }
 
 type Subscription {
@@ -144,6 +172,14 @@ type Subscription {
     """
     before: String
     """
+    Keep only items matching this text, searching title. Quote a phrase to match it whole.
+    """
+    filterText: String
+    """
+    Which fields filterText searches. All of them by default.
+    """
+    filterTextFields: [String!]
+    """
     Return the first n items.
     """
     first: Int
@@ -151,6 +187,14 @@ type Subscription {
     Return the last n items.
     """
     last: Int
+    """
+    Order by one of: added, done, title.
+    """
+    sortBy: String
+    """
+    Which way round to order. Ascending by default.
+    """
+    sortOrder: SortOrder
   ): TaskConnection!
 }
 
