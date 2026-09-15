@@ -60,6 +60,9 @@ type Builder struct {
 
 	roots map[operation]*typeDecl
 
+	// scalars holds Go types registered as custom scalars.
+	scalars map[reflect.Type]*scalarBinding
+
 	plugins []Plugin
 
 	// errs collects declaration-time problems. They are reported together by

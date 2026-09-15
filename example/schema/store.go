@@ -12,44 +12,72 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hiett/lightning"
 	"github.com/hiett/lightning/invalidation"
 )
 
 // Task is a unit of work.
+//
+// Everything the schema knows about this type is written here: its GraphQL
+// name, its description, which fields are exposed, and what each one means.
 type Task struct {
-	// Key is the type-local identifier. It is exposed because a paginated type
-	// needs a key field that is a real Go struct field: the connection builds
-	// its cursors from it, and the live-query diff uses it to line up list
-	// elements between one push and the next. A Relay client keys off id, the
-	// global identifier, instead.
-	Key     string `description:"The type-local identifier. Use id for anything a client stores."`
-	Title   string `description:"What needs doing."`
-	Done    bool   `description:"Whether it has been done."`
-	OwnerID string `graphql:"-"`
-	Added   time.Time
+	lightning.Meta `graphql:"Task" description:"A unit of work."`
+
+	Key     string    `graphql:"-"`
+	Title   string    `description:"What needs doing."`
+	Done    bool      `description:"Whether it has been done."`
+	OwnerID string    `graphql:"-"`
+	Added   time.Time `description:"When it was added."`
 }
+
+// NodeID gives the task its type-local identifier, which is all relay.Node
+// needs beyond a way to fetch one.
+func (t *Task) NodeID() string { return t.Key }
 
 // User is a person.
 type User struct {
+	lightning.Meta `graphql:"User" description:"A person."`
+
 	Key   string `graphql:"-"`
 	Name  string `description:"The user's display name."`
 	Email string `description:"Where to reach them."`
 }
 
-// Team is a group of people. It exists so that the Owner field has more than
-// one possible type, which is what makes the Actor interface worth having.
+func (u *User) NodeID() string      { return u.Key }
+func (u *User) DisplayName() string { return u.Name }
+
+// Team is a group of people. It exists so that Actor has more than one possible
+// type, which is what makes the interface worth having.
 type Team struct {
+	lightning.Meta `graphql:"Team" description:"A group of people."`
+
 	Key     string `graphql:"-"`
 	Name    string `description:"The team's display name."`
 	Members int32  `description:"How many people are on it."`
 }
 
+func (t *Team) NodeID() string      { return t.Key }
+func (t *Team) DisplayName() string { return t.Name }
+
+// Actor is whoever a task belongs to: an ordinary Go interface, which is what a
+// GraphQL interface is backed by. A resolver returns a *User or a *Team and the
+// schema works out which type that is.
+type Actor interface {
+	DisplayName() string
+}
+
+// Status is how far along a task is.
+type Status int32
+
+const (
+	StatusTodo Status = iota
+	StatusDone
+)
+
 // Invalidation keys. Their granularity is a design choice: a live query that
 // read one task re-runs when that task changes, and one that read the list
 // re-runs when the list changes.
-const (
-	taskListKey = "tasks"
-)
+const taskListKey = "tasks"
 
 func taskKey(id string) string { return "task:" + id }
 func userKey(id string) string { return "user:" + id }
@@ -110,9 +138,24 @@ func (s *Store) newID() string {
 	return fmt.Sprintf("task%d", s.next)
 }
 
+// depend records an invalidation key, if there is an invalidator to record it
+// with. The schema exporter builds a store without one.
+func (s *Store) depend(ctx context.Context, keys ...string) {
+	if s.invalidator != nil {
+		s.invalidator.Depend(ctx, keys...)
+	}
+}
+
+func (s *Store) invalidate(ctx context.Context, keys ...string) error {
+	if s.invalidator == nil {
+		return nil
+	}
+	return s.invalidator.Invalidate(ctx, keys...)
+}
+
 // Tasks returns every task, oldest first.
-func (s *Store) Tasks(ctx context.Context) []*Task {
-	s.invalidator.Depend(ctx, taskListKey)
+func (s *Store) Tasks(ctx context.Context) ([]*Task, error) {
+	s.depend(ctx, taskListKey)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -130,52 +173,82 @@ func (s *Store) Tasks(ctx context.Context) []*Task {
 		}
 		return tasks[i].Added.Before(tasks[j].Added)
 	})
-	return tasks
+	return tasks, nil
 }
 
 // Task returns one task, or nil if there is no such task.
-func (s *Store) Task(ctx context.Context, id string) *Task {
-	s.invalidator.Depend(ctx, taskKey(id))
+func (s *Store) Task(ctx context.Context, id string) (*Task, error) {
+	s.depend(ctx, taskKey(id))
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	task, ok := s.tasks[id]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	copied := *task
-	return &copied
+	return &copied, nil
 }
 
 // User returns one user, or nil.
-func (s *Store) User(ctx context.Context, id string) *User {
-	s.invalidator.Depend(ctx, userKey(id))
+func (s *Store) User(ctx context.Context, id string) (*User, error) {
+	s.depend(ctx, userKey(id))
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	user, ok := s.users[id]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	copied := *user
-	return &copied
+	return &copied, nil
 }
 
 // Team returns one team, or nil.
-func (s *Store) Team(ctx context.Context, id string) *Team {
-	s.invalidator.Depend(ctx, teamKey(id))
+func (s *Store) Team(ctx context.Context, id string) (*Team, error) {
+	s.depend(ctx, teamKey(id))
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	team, ok := s.teams[id]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	copied := *team
-	return &copied
+	return &copied, nil
+}
+
+// Viewer returns the signed-in user. This example always signs in as Ada.
+func (s *Store) Viewer(ctx context.Context, _ *lightning.Root) (*User, error) {
+	return s.User(ctx, "u1")
+}
+
+// Owner returns whoever a task belongs to, as an Actor.
+//
+// The resolver returns the interface value itself: there is no wrapper struct
+// to build, and returning something that is not an Actor would not compile.
+func (s *Store) Owner(ctx context.Context, task *Task) (Actor, error) {
+	if user, err := s.User(ctx, task.OwnerID); err != nil {
+		return nil, err
+	} else if user != nil {
+		return user, nil
+	}
+	team, err := s.Team(ctx, task.OwnerID)
+	if err != nil || team == nil {
+		return nil, err
+	}
+	return team, nil
+}
+
+// Status reports how far along a task is.
+func (s *Store) Status(task *Task) Status {
+	if task.Done {
+		return StatusDone
+	}
+	return StatusTodo
 }
 
 // AddTask creates a task and announces that the list changed.
@@ -194,7 +267,7 @@ func (s *Store) AddTask(ctx context.Context, title, ownerID string) (*Task, erro
 	copied := *task
 	s.mu.Unlock()
 
-	if err := s.invalidator.Invalidate(ctx, taskListKey); err != nil {
+	if err := s.invalidate(ctx, taskListKey); err != nil {
 		return nil, err
 	}
 	return &copied, nil
@@ -214,7 +287,7 @@ func (s *Store) SetTaskDone(ctx context.Context, id string, done bool) (*Task, e
 
 	// Both keys: a live query watching the list sees the change, and so does
 	// one that fetched this single task by its global id.
-	if err := s.invalidator.Invalidate(ctx, taskListKey, taskKey(id)); err != nil {
+	if err := s.invalidate(ctx, taskListKey, taskKey(id)); err != nil {
 		return nil, err
 	}
 	return &copied, nil

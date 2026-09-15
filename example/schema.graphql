@@ -12,6 +12,9 @@ interface Actor {
   The name to show for this actor.
   """
   displayName: String!
+  """
+  A globally unique identifier, which node(id:) resolves back to this object.
+  """
   id: ID!
 }
 
@@ -53,14 +56,31 @@ type Mutation {
 An object with a globally unique identifier, which a client can refetch with the node field.
 """
 interface Node {
+  """
+  A globally unique identifier.
+  """
   id: ID!
 }
 
+"""
+Where a page sits in the whole list.
+"""
 type PageInfo {
+  """
+  The cursor of the last item in this page, or null if it is empty.
+  """
   endCursor: String
+  """
+  Whether more items follow this page.
+  """
   hasNextPage: Boolean!
+  """
+  Whether more items precede this page.
+  """
   hasPreviousPage: Boolean!
-  pages: [String!]!
+  """
+  The cursor of the first item in this page, or null if it is empty.
+  """
   startCursor: String
 }
 
@@ -86,43 +106,78 @@ type Query {
   """
   Every task, oldest first.
   """
-  tasks(after: String, before: String, filterText: String, filterTextFields: [String!], filterType: String, first: Int, last: Int, sortBy: String, sortOrder: SortOrder): TaskConnection!
+  tasks(
+    """
+    Return items after this cursor.
+    """
+    after: String
+    """
+    Return items before this cursor.
+    """
+    before: String
+    """
+    Return the first n items.
+    """
+    first: Int
+    """
+    Return the last n items.
+    """
+    last: Int
+  ): TaskConnection!
   """
   The signed-in user. This example always signs in as Ada.
   """
   viewer: User
 }
 
-enum SortOrder {
-  asc
-  desc
-}
-
 type Subscription {
   """
   Every task, pushed again whenever any of them changes.
   """
-  tasks(after: String, before: String, filterText: String, filterTextFields: [String!], filterType: String, first: Int, last: Int, sortBy: String, sortOrder: SortOrder): TaskConnection!
+  tasks(
+    """
+    Return items after this cursor.
+    """
+    after: String
+    """
+    Return items before this cursor.
+    """
+    before: String
+    """
+    Return the first n items.
+    """
+    first: Int
+    """
+    Return the last n items.
+    """
+    last: Int
+  ): TaskConnection!
 }
 
 """
 A unit of work.
 """
 type Task implements Node {
+  """
+  When it was added.
+  """
   added: Time!
   """
   Whether it has been done.
   """
   done: Boolean!
+  """
+  A globally unique identifier, which node(id:) resolves back to this object.
+  """
   id: ID!
-  """
-  The type-local identifier. Use id for anything a client stores.
-  """
-  key: String!
   """
   Whoever the task belongs to.
   """
   owner: Actor
+  """
+  How far along the task is.
+  """
+  status: TaskStatus!
   """
   What needs doing.
   """
@@ -133,8 +188,17 @@ type Task implements Node {
 A paginated list of Task, following the Relay Cursor Connections specification.
 """
 type TaskConnection {
+  """
+  The items in this page, each with its cursor.
+  """
   edges: [TaskEdge!]!
+  """
+  Where this page sits in the whole list.
+  """
   pageInfo: PageInfo!
+  """
+  How many items the whole list holds. An extension; Relay ignores it.
+  """
   totalCount: Int64!
 }
 
@@ -153,6 +217,14 @@ type TaskEdge {
 }
 
 """
+How far along a task is.
+"""
+enum TaskStatus {
+  DONE
+  TODO
+}
+
+"""
 A group of people.
 """
 type Team implements Actor & Node {
@@ -160,6 +232,9 @@ type Team implements Actor & Node {
   The name to show for this actor.
   """
   displayName: String!
+  """
+  A globally unique identifier, which node(id:) resolves back to this object.
+  """
   id: ID!
   """
   How many people are on it.
@@ -188,6 +263,9 @@ type User implements Actor & Node {
   Where to reach them.
   """
   email: String!
+  """
+  A globally unique identifier, which node(id:) resolves back to this object.
+  """
   id: ID!
   """
   The user's display name.

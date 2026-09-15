@@ -120,6 +120,28 @@ func (d DeclaredType) GoType() reflect.Type { return d.decl.goType }
 // IsObject reports whether the declaration is an object type.
 func (d DeclaredType) IsObject() bool { return d.decl.kind == kindObject }
 
+// IsInterface reports whether the declaration is an interface type.
+func (d DeclaredType) IsInterface() bool { return d.decl.kind == kindInterface }
+
+// Members returns the types belonging to an interface or union.
+func (d DeclaredType) Members() []DeclaredType {
+	out := make([]DeclaredType, 0, len(d.decl.members))
+	for _, member := range d.decl.members {
+		out = append(out, DeclaredType{b: d.b, decl: member})
+	}
+	return out
+}
+
+// HasField reports whether the type already declares a field of this name.
+func (d DeclaredType) HasField(name string) bool {
+	for _, field := range d.decl.fields {
+		if field.name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Meta returns plugin data attached to the type.
 func (d DeclaredType) Meta(key string) (any, bool) {
 	v, ok := d.decl.meta[key]

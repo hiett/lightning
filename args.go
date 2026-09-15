@@ -208,6 +208,9 @@ func (b *Builder) declareInputTypes(goType reflect.Type) {
 	if goType.Kind() != reflect.Struct || isScalarStruct(goType) {
 		return
 	}
+	if b.scalarBindingFor(goType) != nil {
+		return
+	}
 	if _, declared := b.decls[goType]; declared {
 		return
 	}
@@ -262,6 +265,18 @@ func (b *Builder) argParser(goType reflect.Type, at string) (func(any, reflect.V
 				}
 			}
 			dest.Set(out)
+			return nil
+		}, nil
+	}
+
+	// A custom scalar decodes itself.
+	if binding := b.scalarBindingFor(goType); binding != nil {
+		return func(value any, dest reflect.Value) error {
+			out, err := binding.decode(value)
+			if err != nil {
+				return err
+			}
+			dest.Set(reflect.ValueOf(out))
 			return nil
 		}, nil
 	}

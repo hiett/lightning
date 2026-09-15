@@ -130,9 +130,25 @@ func Plugin(options ...Option) *Relay {
 // PluginName identifies the plugin in error messages.
 func (r *Relay) PluginName() string { return "relay" }
 
-// Install records the builder so that Node can register types against it.
+// Install records the builder and registers GID as the ID scalar, so that an
+// argument declared as a GID arrives decoded.
 func (r *Relay) Install(b *lightning.Builder) error {
 	r.b = b
+
+	lightning.ScalarAs[GID](b, "ID",
+		func(id GID) (any, error) { return r.codec.Encode(id.Type, id.Local) },
+		func(value any) (GID, error) {
+			text, err := asID(value)
+			if err != nil {
+				return GID{}, err
+			}
+			typeName, local, err := r.codec.Decode(text)
+			if err != nil {
+				return GID{}, graphql.NewClientError("%s", err.Error())
+			}
+			return GID{Type: typeName, Local: local}, nil
+		})
+
 	return nil
 }
 
@@ -285,7 +301,57 @@ func (r *Relay) BeforeBuild(b *lightning.Builder) error {
 	}
 
 	r.addRootFields(b)
+	r.addIDToAbstractTypes(b)
 	return nil
+}
+
+// addIDToAbstractTypes gives an interface an id field when every one of its
+// members is a node.
+//
+// An interface whose members all have a global identifier can promise one, and
+// a client that has an Actor should be able to ask for its id without first
+// narrowing to a concrete type. Doing it here rather than asking the author to
+// declare it keeps the promise in step with the members: add a member that is
+// not a node and the promise goes away.
+func (r *Relay) addIDToAbstractTypes(b *lightning.Builder) {
+	for _, declared := range b.DeclaredTypes() {
+		if !declared.IsInterface() {
+			continue
+		}
+
+		members := declared.Members()
+		if len(members) == 0 {
+			continue
+		}
+
+		allNodes := true
+		for _, member := range members {
+			if _, ok := r.nodes[member.GoType()]; !ok {
+				allNodes = false
+				break
+			}
+		}
+		if !allNodes || declared.HasField("id") {
+			continue
+		}
+
+		declared.AddField("id", &graphql.Field{
+			Type:           &graphql.NonNull{Type: idScalar()},
+			Description:    "A globally unique identifier, which node(id:) resolves back to this object.",
+			ParseArguments: noArguments,
+			Resolve: func(ctx context.Context, source, _ any, _ *graphql.SelectionSet) (any, error) {
+				node, err := r.nodeFor(source)
+				if err != nil {
+					return nil, err
+				}
+				localID, err := node.localID(ctx, source)
+				if err != nil {
+					return nil, err
+				}
+				return r.codec.Encode(node.name, localID)
+			},
+		})
+	}
 }
 
 // AfterBuild links every node type into the Node interface.

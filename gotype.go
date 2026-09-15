@@ -40,8 +40,7 @@ var (
 // unregistered struct is a schema mistake, and naming it is more useful than
 // inventing a type for it.
 func (b *Builder) graphQLType(goType reflect.Type, at string) (graphql.Type, error) {
-	// A pointer makes whatever it points at nullable, and is the only thing
-	// that does.
+	// A pointer makes whatever it points at nullable.
 	if goType.Kind() == reflect.Ptr {
 		return b.namedOrList(goType.Elem(), at)
 	}
@@ -50,6 +49,14 @@ func (b *Builder) graphQLType(goType reflect.Type, at string) (graphql.Type, err
 	if err != nil {
 		return nil, err
 	}
+
+	// A Go interface value can be nil without being a pointer, so an
+	// interface-typed result is nullable for the same reason a pointer is: the
+	// resolver is able to return nothing.
+	if goType.Kind() == reflect.Interface {
+		return inner, nil
+	}
+
 	return &graphql.NonNull{Type: inner}, nil
 }
 
@@ -74,8 +81,15 @@ func (b *Builder) namedOrList(goType reflect.Type, at string) (graphql.Type, err
 // namedType resolves a Go type to a named GraphQL type: a scalar, or something
 // registered on the builder.
 func (b *Builder) namedType(goType reflect.Type, at string) (graphql.Type, error) {
-	// A registered type wins over everything, so an application can declare a
-	// defined string type as an enum rather than have it silently be a String.
+	// A custom scalar wins over everything: a Go type registered as one is
+	// that scalar, whatever its Kind would otherwise suggest.
+	if binding := b.scalarBindingFor(goType); binding != nil {
+		return b.customScalarType(binding), nil
+	}
+
+	// A registered type wins over the built-in mapping, so an application can
+	// declare a defined string type as an enum rather than have it silently be
+	// a String.
 	if decl := b.declFor(goType); decl != nil {
 		built, err := b.buildDecl(decl)
 		if err != nil {

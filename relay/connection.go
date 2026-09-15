@@ -282,7 +282,7 @@ func (r *Relay) connectionType(b *lightning.Builder, elemType reflect.Type) (gra
 				},
 			},
 			"totalCount": {
-				Type:           &graphql.NonNull{Type: &graphql.Scalar{Type: "Int64", Unwrapper: int64AsString}},
+				Type:           &graphql.NonNull{Type: lightning.ScalarType("Int64")},
 				Description:    "How many items the whole list holds. An extension; Relay ignores it.",
 				ParseArguments: noArguments,
 				Resolve: func(ctx context.Context, source, _ any, _ *graphql.SelectionSet) (any, error) {
