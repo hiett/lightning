@@ -11,14 +11,30 @@ the reason for the fork. Everything else has been brought up to the modern
 specification.
 
 ```go
-schema := schemabuilder.NewSchema()
+type Task struct {
+    lightning.Meta `description:"A unit of work."`
 
-schema.Query().FieldFunc("tasks", func(ctx context.Context) []*Task {
+    Key   string `graphql:"-"`
+    Title string `description:"What needs doing."`
+    Done  bool   `description:"Whether it has been done."`
+}
+
+func (t *Task) NodeID() string { return t.Key }
+
+b := lightning.New(relay.Plugin())
+lightning.Object[Task](b)
+relay.Node(b, store.Task)
+
+relay.Connection(b.Query(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
     return store.Tasks(ctx) // store.Tasks records a dependency
-}, schemabuilder.Paginated)
+})
 
-http.Handle("/graphql", graphql.HTTPHandler(schema.MustBuild()))
+http.Handle("/graphql", graphql.HTTPHandler(b.MustBuild()))
 ```
+
+That is a complete server with a Relay connection, global identifiers, `node(id:)`
+and a live query. There is no type argument at any call site, no nullability
+flag, and nothing that names a field twice: the Go types say it all.
 
 When `store` later announces that tasks changed, every live query that read
 them re-executes and its client is sent the difference. No polling, no manual
@@ -43,6 +59,7 @@ what they read.
 | `operationName` | ignored | honoured |
 | Dependencies | ~20, several abandoned | 6, all current |
 | Databases | `livesql` + `sqlgen` built in | none; bring your own invalidation source |
+| Authoring | reflection over `interface{}` resolvers | generics; a wrong resolver is a **compile** error |
 
 `DECISIONS.md` records why each of those went the way it did.
 
@@ -52,6 +69,16 @@ what they read.
 
 ```
 go get github.com/hiett/lightning
+```
+
+Requires **Go 1.27**. Two packages do almost everything:
+
+```go
+import (
+    "github.com/hiett/lightning"        // the schema-authoring API
+    "github.com/hiett/lightning/relay"  // the Node interface and connections
+    "github.com/hiett/lightning/graphql" // the runtime: handlers, SDL, errors
+)
 ```
 
 The `example/` directory is a complete working server — an interface, the Node
@@ -68,30 +95,77 @@ and open <http://localhost:8080> for GraphiQL.
 
 ## Building a schema
 
-Schemas are built by reflection over Go types. A struct becomes an object type,
-its exported fields become fields, and `FieldFunc` adds resolvers.
+A struct is already a complete description of itself: its exported fields become
+GraphQL fields, and its tags carry everything else. Nothing is named twice.
 
 ```go
 type Task struct {
-    Title string `description:"What needs doing."`
-    Done  bool
-    Added time.Time `graphql:"-"` // not exposed
+    lightning.Meta `graphql:"Task" description:"A unit of work."`
+
+    Key   string  `graphql:"-"`                                  // not exposed
+    Title string  `description:"What needs doing."`
+    Done  bool    `description:"Whether it has been done."`
+    Notes *string `description:"Anything else." deprecated:"Use comments."`
 }
 
-schema := schemabuilder.NewSchema()
+b := lightning.New()
+task := lightning.Object[Task](b)
 
-task := schema.Object("Task", Task{})
-task.Describe("A unit of work.")
-task.FieldFunc("owner", func(ctx context.Context, t *Task) *User {
-    return store.User(ctx, t.OwnerID)
-}, schemabuilder.Description("Whoever the task belongs to."))
+task.Field("owner", store.Owner).Describe("Whoever the task belongs to.")
 
-schema.Query().FieldFunc("tasks", func(ctx context.Context) []*Task {
+b.Query().Field("tasks", func(ctx context.Context, _ *lightning.Root) ([]*Task, error) {
     return store.Tasks(ctx)
 })
 
-built := schema.MustBuild()
+built := b.MustBuild()
 ```
+
+`store.Owner` is an ordinary method — `func(ctx context.Context, t *Task) (Actor, error)` —
+handed over as it is. Its return type names the GraphQL type, so there is no
+`Ref` to pass and nothing to keep in step.
+
+The tag vocabulary is `graphql` (a name, or `-` to hide), `description`,
+`deprecated`, `default`, `sortable` and `filterable`. A key that looks like one
+of these but is not — `describe:`, `desc:`, `sort:` — is a build error naming the
+field and what was meant, because a misspelled documentation tag documents
+nothing and says so nowhere.
+
+### Fields
+
+| | |
+|---|---|
+| `t.Field(name, fn)` | `func(ctx, *T) (R, error)` — the usual one |
+| `t.Attr(name, fn)` | `func(*T) R` — a pure accessor, no ceremony |
+| `t.FieldArgs(name, fn)` | `func(ctx, *T, A) (R, error)` — with arguments |
+| `t.Batch(name, fn)` | `func(ctx, []*T) ([]R, error)` — every parent at once |
+| `t.BatchArgs(name, fn)` | the same, with arguments |
+| `t.Load(name, key, load)` | fetch by key, deduplicated |
+
+Each returns a `*Field` for chaining: `.Describe`, `.Deprecate`, `.NonNull`,
+`.Nullable`, `.Expensive`, `.Sortable`, `.Filterable`, `.UseBatch`, `.Split`.
+
+A resolver of the wrong shape does not compile. There is no reflection over
+`interface{}` and no build-time signature check, because the compiler has
+already done it.
+
+### Nullability comes from the Go type
+
+| Go | GraphQL |
+|---|---|
+| `string` | `String!` |
+| `*string` | `String` |
+| `[]string` | `[String!]!` |
+| `[]*string` | `[String]!` |
+| `*[]string` | `[String!]` |
+| `*Task` | `Task` |
+| `Task` | `Task!` |
+| `Actor` (a Go interface) | `Actor` |
+
+An interface value is nullable for the same reason a pointer is: it can be nil.
+
+`.NonNull()` and `.Nullable()` override this, and are rarely the right tool: when
+the Go type is wrong, changing the Go type says the same thing to every reader
+rather than to one field.
 
 ### Scalars
 
@@ -102,124 +176,280 @@ built := schema.MustBuild()
 | `int8`, `int16`, `int32`, `uint8`, `uint16` | `Int` | everything that fits in 32 signed bits |
 | `int`, `int64`, `uint`, `uint32`, `uint64` | `Int64` | **serialised as a decimal string** |
 | `float32`, `float64` | `Float` | |
-| `schemabuilder.ID` | `ID` | |
+| `lightning.ID` | `ID` | |
 | `time.Time` | `Time` | RFC 3339 |
 | `[]byte` | `Bytes` | base64 |
+| anything with `MarshalText` | `String` | |
 
 `Int64` is a string on the wire because a GraphQL `Int` is 32-bit and a JSON
 number loses precision above 2⁵³ once a JavaScript client parses it. Go's `int`
 is 64 bits, so it maps to `Int64` too; declare a field `int32` if it genuinely
 is a small number and you want a JSON number.
 
-### Documentation
-
-Struct fields take tags; registered fields take options.
+A Go type can be registered as a scalar of its own:
 
 ```go
-type User struct {
-    Name  string `description:"The user's display name."`
-    Email string `description:"Where to reach them." deprecated:"Use emails instead."`
-}
-
-user.FieldFunc("friends", resolve,
-    schemabuilder.Description("Everyone this user follows."),
-    schemabuilder.ArgDescription("limit", "How many to return."),
-    schemabuilder.Deprecated("Use following instead."))
+lightning.Scalar[Money](b, "Money", encode, decode)
 ```
 
-Both reach introspection and the exported SDL.
+or under an existing scalar's name, which is how `relay.GID` travels as an `ID`
+while arriving at a resolver already decoded:
+
+```go
+lightning.ScalarAs[GID](b, "ID", encode, decode)
+```
 
 ---
 
-## Interfaces
+## Arguments
 
-An interface is declared by a marker struct whose embedded pointers name its
-implementing types — the same shape as `schemabuilder.Union`.
+An argument struct is an ordinary Go struct. Its tags carry the names,
+documentation and defaults, and the type is inferred from the resolver — it is
+never named at the call site.
 
 ```go
-type Actor struct {
-    schemabuilder.Interface
-
-    *User
-    *Team
+type AddTaskArgs struct {
+    Title   string    `description:"What needs doing."`
+    OwnerID relay.GID `graphql:"ownerId" description:"Who it belongs to."`
+    Limit   *int32    `description:"How many to return." default:"20"`
 }
 
-schema.Interface("Actor", Actor{}).
-    Fields("id", "displayName").
-    Describe("Whoever a task belongs to.")
-```
-
-A field returning an interface returns the struct with exactly one member set:
-
-```go
-task.FieldFunc("owner", func(ctx context.Context, t *Task) *Actor {
-    if user := store.User(ctx, t.OwnerID); user != nil {
-        return &Actor{User: user}
-    }
-    return &Actor{Team: store.Team(ctx, t.OwnerID)}
+b.Mutation().FieldArgs("addTask", func(ctx context.Context, _ *lightning.Root, args AddTaskArgs) (*Task, error) {
+    return store.AddTask(ctx, args.Title, args.OwnerID.Local)
 })
 ```
 
-`Fields(...)` declares the interface's field set explicitly. Every named field
-must exist on every implementing type with the same type and arguments, or the
-schema fails to build. Leave it out and the interface exposes everything its
-implementing types agree on.
+A pointer field is optional and a value field is required; a `default` makes a
+value field optional too. A struct reached through an argument becomes an input
+object automatically, named after the Go type.
 
 ---
 
-## The Node interface and global identifiers
-
-Relay's store keys off a globally unique `id`. Without one, `@refetchable`,
-`usePaginationFragment` refetch and store normalisation all break.
-
-A type declares itself a node by saying how to read its identifier and how to
-fetch it back:
+## Enums
 
 ```go
-task := schema.Object("Task", Task{})
-task.Node(
-    func(t *Task) string { return t.Key },
-    func(ctx context.Context, id string) (*Task, error) { return store.Task(ctx, id), nil },
+type Status int32
+
+const (
+    StatusTodo Status = iota
+    StatusDone
 )
+
+lightning.Enum(b, "TaskStatus", map[string]Status{
+    "TODO": StatusTodo,
+    "DONE": StatusDone,
+}).Describe("How far along a task is.")
 ```
 
-That gives the type an `id` field carrying its **global** identifier, makes it a
-member of the `Node` interface, and adds `node(id: ID!): Node` and
-`nodes(ids: [ID!]!): [Node]!` to the query root.
+A field returning `Status` then has that enum type, with nothing further to say.
+Individual values are documented with `.Value("TODO").Describe(...)` and
+deprecated with `.Deprecate(...)`.
 
-The default global identifier is base64 of `TypeName:localID`. That is
-obfuscation, not secrecy — anyone can decode it. Replace the codec if your
-identifiers must not be guessable or forgeable:
+---
+
+## Interfaces and unions
+
+**A GraphQL interface is a Go interface.**
 
 ```go
-schema.SetGlobalIDCodec(mySignedCodec{}) // implements schemabuilder.GlobalIDCodec
+type Actor interface{ DisplayName() string }
+
+actor := lightning.Interface[Actor](b).Describe("Whoever a task belongs to.")
+actor.Field("displayName", func(ctx context.Context, a Actor) (string, error) {
+    return a.DisplayName(), nil
+})
+
+lightning.Implements(actor, user, func(u *User) Actor { return u })
+lightning.Implements(actor, team, func(t *Team) Actor { return t })
 ```
 
-A mutation that takes a global identifier decodes it with the same codec:
+The witness function is the point: `func(u *User) Actor { return u }` compiles
+only if `*User` satisfies `Actor`, so membership is checked by the compiler and
+a missing method is named by it. A resolver returns the interface value:
 
 ```go
-_, localID, err := schemabuilder.Base64GlobalIDCodec{}.Decode(args.Id.Value)
+task.Field("owner", func(ctx context.Context, t *Task) (Actor, error) {
+    return store.Owner(ctx, t.OwnerID)
+})
+```
+
+The concrete Go type decides `__typename`. There is no marker struct and no
+one-hot wrapper, so there is no way to build an invalid one.
+
+Membership is explicit rather than inferred from which types happen to satisfy
+the interface. Satisfying an interface by accident is ordinary Go; joining a
+GraphQL interface by accident is not.
+
+A member that does not declare an interface field inherits it — the interface's
+resolver takes the interface value, which every member satisfies. A member that
+declares it with a different type is a build error naming both.
+
+A **union** is the same over a Go interface with no methods:
+
+```go
+type Gateway interface{ isGateway() }
+
+gateway := lightning.Union[Gateway](b)
+lightning.Implements(gateway, vehicle, func(v *Vehicle) Gateway { return v })
 ```
 
 ---
 
-## Connections
+## Relay
 
-Adding `schemabuilder.Paginated` to a field that returns a slice generates a
-Relay connection: `TaskConnection`, `TaskEdge`, base64 cursors, `pageInfo` with
-`hasNextPage` / `hasPreviousPage` / `startCursor` / `endCursor`, a `totalCount`,
-and the `first` / `last` / `before` / `after` arguments.
+Relay lives in `lightning/relay`, a plugin with no privileged access to the
+core: everything it does, anything else can do.
 
 ```go
-task.Key("key") // a paginated type needs a key field; cursors are built from it
-
-schema.Query().FieldFunc("tasks", func(ctx context.Context) []*Task {
-    return store.Tasks(ctx)
-}, schemabuilder.Paginated)
+b := lightning.New(relay.Plugin())
 ```
+
+### The Node interface
+
+```go
+relay.Node(b, store.Task)   // uses (*Task).NodeID()
+```
+
+One line gives the type an `id` field carrying its **global** identifier, makes
+it a member of the `Node` interface, adds `node(id: ID!): Node` and
+`nodes(ids: [ID!]!): [Node]!` to the query root, supplies the key every cursor
+over the type is built from, and supplies the `__key` the live-query diff lines
+list elements up by.
+
+For a type with no `NodeID` method, name the identifier explicitly:
+
+```go
+relay.NodeFunc(b, func(t *Task) string { return t.Key }, store.Task)
+```
+
+The default identifier is base64 of `TypeName:localID`. That is obfuscation, not
+secrecy — anyone can decode it. Replace the codec if identifiers must not be
+guessable or forgeable:
+
+```go
+lightning.New(relay.Plugin(relay.WithCodec(mySignedCodec{})))
+```
+
+An argument typed `relay.GID` arrives **already decoded**, and a malformed one
+is a client error before the resolver runs:
+
+```go
+type SetDoneArgs struct {
+    ID   relay.GID `graphql:"id"`
+    Done bool
+}
+// args.ID.Type is "Task"; args.ID.Local is the local identifier
+```
+
+### Connections
+
+```go
+relay.Connection(b.Query(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
+    return store.Tasks(ctx)
+})
+```
+
+The resolver returns the whole list and the plugin pages it: `TaskConnection`,
+`TaskEdge`, cursors, `pageInfo`, `totalCount`, and the `first` / `last` /
+`before` / `after` arguments. The element type must be a registered node,
+because its identifier is what the cursors are built from.
+
+Cursors are **key-based**, not offsets: a cursor names the item it points at, so
+inserting earlier in the list does not move it. In a library whose headline
+feature is live queries over changing lists, an offset cursor would be wrong in
+a way it would not be elsewhere.
+
+`relay.ConnectionArgs` adds arguments of your own alongside the pagination ones.
 
 Two extensions beyond the specification, both of which Relay ignores:
 `totalCount`, and `pageInfo.pages` for page-number pagination.
+
+### Sorting and searching
+
+Whether a title can be searched is a fact about the title, so it is written on
+the title:
+
+```go
+Title string `description:"What needs doing." sortable:"true" filterable:"true"`
+```
+
+or, for a computed field, `.Sortable()` and `.Filterable()`. Every connection
+over the type then takes `sortBy`, `sortOrder`, `filterText` and
+`filterTextFields`, and applies them.
+
+A connection over a type with nothing sortable **has no `sortBy` argument at
+all**. An argument that cannot do anything is not offered.
+
+### Paging it yourself
+
+When the list is paged in the database, say so and the plugin believes you:
+
+```go
+relay.ManualConnection(q, "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, relay.PageResult, error) {
+    rows, total, more := store.PageTasks(ctx, p)
+    return rows, relay.PageResult{TotalCount: total, HasNextPage: more}, nil
+})
+```
+
+The resolver is given the page the client asked for — including the sort and
+filter arguments, so it can push them down — and returns exactly the items in
+it. The plugin adds cursors and nothing else.
+
+---
+
+## Batching
+
+A batch field is handed every parent the executor is about to ask, which is how
+N+1 queries are avoided:
+
+```go
+task.Batch("owner", func(ctx context.Context, tasks []*Task) ([]*User, error) {
+    ids := make([]string, len(tasks))
+    for i, task := range tasks {
+        ids[i] = task.OwnerID
+    }
+    return store.UsersByID(ctx, ids) // one round trip, in order
+})
+```
+
+Results line up with parents by position. `R` is the type of one result, so the
+field's GraphQL type and nullability come from the Go type as they do anywhere
+else.
+
+For the case batching is nearly always for — a lookup by a key on the parent —
+`Load` does the whole thing, deduplicating the keys:
+
+```go
+task.Load("owner", func(t *Task) string { return t.OwnerID }, store.UsersByID)
+```
+
+Three tasks with the same owner cost one lookup.
+
+`.UseBatch(fn)` decides per request whether to batch; with batching off the same
+resolver runs once per parent, so there is nothing written twice and nothing
+that can drift apart. `.Expensive()` marks a field worth running in parallel
+with its siblings, and `.Split(fn)` says how many ways to divide a batch.
+
+---
+
+## Plugins
+
+A plugin is a value installed on a builder. It implements only the capabilities
+it needs:
+
+```go
+type Plugin interface{ PluginName() string }
+
+type InstallPlugin interface     { Plugin; Install(*lightning.Builder) error }
+type FieldPlugin interface       { Plugin; Field(*lightning.Builder, string, lightning.FieldInfo, *graphql.Field) error }
+type BeforeBuildPlugin interface { Plugin; BeforeBuild(*lightning.Builder) error }
+type AfterBuildPlugin interface  { Plugin; AfterBuild(*lightning.Builder, *graphql.Schema) error }
+```
+
+`FieldPlugin` sees every field as it is built and may wrap its resolver, which
+is how authorisation, tracing or metrics are added without the field's author
+naming them. `relay` is an ordinary plugin written against this seam and nothing
+else.
 
 ---
 
@@ -234,9 +464,9 @@ The interoperable one. Register subscription roots and serve the protocol any
 standard client speaks:
 
 ```go
-schema.Subscription().FieldFunc("tasks", func(ctx context.Context) []*Task {
+relay.Connection(b.Subscription(), "tasks", func(ctx context.Context, _ *lightning.Root, p relay.Page) ([]*Task, error) {
     return store.Tasks(ctx)
-}, schemabuilder.Paginated)
+})
 
 http.Handle("/graphql/ws", graphql.TransportWSHandler(built))
 ```
@@ -395,27 +625,6 @@ did resolve.
 
 ---
 
-## Batching
-
-`BatchFieldFunc` receives every source object at once, which is how N+1 queries
-are avoided:
-
-```go
-task.BatchFieldFunc("owner", func(ctx context.Context, tasks map[batch.Index]*Task) (map[batch.Index]*User, error) {
-    ids := make([]string, 0, len(tasks))
-    for _, task := range tasks {
-        ids = append(ids, task.OwnerID)
-    }
-    users := store.UsersByID(ctx, ids) // one round trip
-    ...
-})
-```
-
-`schemabuilder.Expensive` marks a field whose resolution should be
-parallelised.
-
----
-
 ## Development
 
 ```
@@ -427,6 +636,10 @@ go test -race ./...
 
 Snapshot tests regenerate with `go test ./... -rewriteSnapshots`; read the diff
 rather than trusting it.
+
+The module requires **Go 1.27**, for generic methods: they are what lets a
+field's type be inferred from its resolver rather than named again at the call
+site.
 
 CI runs build, vet, gofmt, test, the race detector and a `go mod tidy` check on
 every push.
