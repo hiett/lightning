@@ -149,7 +149,7 @@ query.
 
 ## 4. Decisions a human should look at
 
-`DECISIONS.md` has all forty-two in full. These are the ones with consequences.
+`DECISIONS.md` has all forty-six in full. These are the ones with consequences.
 
 From the first refactor:
 
@@ -211,10 +211,11 @@ not on every HTTP response.
   should use `relay.ManualConnection`, which hands the resolver the sort and
   filter arguments to push down; there is no automatic pushdown and there
   cannot be one without knowing where the list comes from.
-- **A batch field's resolver is not wrapped by `FieldPlugin`.** A plugin that
-  replaces `Resolve` to add tracing or authorisation will not see the batched
-  path. Both are on the same `*graphql.Field`, so the fix is for the plugin to
-  wrap `BatchResolver` as well — but the seam does not yet make that obvious.
+- **A plugin must wrap both of a batch field's resolvers.** A batch field has
+  `Resolve` for one parent and `BatchResolver` for many, and which runs is
+  decided per request, so a plugin that wraps only `Resolve` has behaviour that
+  comes and goes with the batching. The seam says so in `FieldPlugin`'s
+  documentation; it does not enforce it.
 - **Persisted queries are unsupported** by the diff protocol, which carries
   query text. `js/` reports this clearly rather than failing obscurely.
 - **`relay.ManualConnection` does not cap its own page size.** `WithMaxPageSize`

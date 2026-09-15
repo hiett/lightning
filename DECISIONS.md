@@ -913,3 +913,69 @@ file, every line that changed:
 
 Nothing else differs: no type, field, argument or nullability change beyond those five. relay-compiler
 compiles the app's nine documents clean against it and the end-to-end tests pass unchanged.
+
+## D43. Every field takes one path
+
+A struct's exported fields used to be turned straight into finished
+`graphql.Field` values, while declared fields went through the builder. Two
+paths meant two of everything, and both halves drifted:
+
+- **A plugin never saw a struct field.** `FieldPlugin.Field` is how a plugin
+  adds authorisation or tracing to every resolver; it was shown the declared
+  ones only, so a type whose fields were all struct-derived was invisible to it.
+  That is not a gap a plugin author could reasonably guess at.
+- **A promoted field read the wrong value.** An embedded struct's field was read
+  by its index *inside the embedded struct*, applied to the outer struct. For
+  `struct { Name string; Timestamps; Note string }`, `createdBy` — field 0 of
+  `Timestamps` — returned field 0 of the outer struct. Silently, with no error
+  anywhere, and only for types that embed.
+- **`DeclaredType.HasField` answered "no" for a field that existed**, so relay's
+  check for a type that already has an `id` missed a struct field called `Id`
+  and the collision surfaced later as a generic duplicate-field error.
+
+A struct field is now a `fieldDecl` like any other, carrying an index *path*
+rather than an index, and there is one loop that checks the name, builds the
+field, shows it to the plugins and records whether it is sortable.
+
+## D44. A field the executor answers itself cannot be declared
+
+`__typename` and `__key` are written by the executor whatever a type says, so a
+field declared under either name would never be called. That is now a build
+error naming the field and saying what supplies it, rather than a resolver that
+silently never runs.
+
+Other `__`-prefixed names are left alone: `__schema` and `__type` are ordinary
+fields that the introspection schema declares through the same API an
+application uses, and banning the prefix outright would ban that.
+
+## D45. Two argument mistakes that used to be silent or fatal
+
+**An output object cannot be an argument.** A Go type declared with
+`lightning.Object` and then used in an argument struct built a schema whose
+argument was an object type, which is illegal GraphQL that only a client would
+discover. It is now a build error saying to give the argument a struct of its
+own. The old library generated a parallel `_InputObject` for the same Go type,
+which meant a type could be two different things depending on where it was used.
+
+**A connection argument cannot clash with a pagination one.** The connection's
+own arguments and the resolver's share one struct, so an argument named `First`
+used to panic out of `reflect.StructOf` with "duplicate field First". It is now
+a build error naming the argument.
+
+## D46. The introspection schema follows the specification's nullability
+
+`__Type.fields`, `interfaces`, `possibleTypes`, `inputFields` and `enumValues`
+are nullable lists in the specification, and null is what they mean: a scalar
+does not have an empty set of interfaces, it has no answer to the question. They
+reported `[]`. Descriptions and deprecation reasons are nullable Strings and
+reported `""`. `__schema.queryType` is non-null and was nullable.
+
+All are now as the specification says. The old builder could not express a
+nullable list return, which is why they were wrong; the new one derives it from
+`*[]T`, so saying it is a one-character change.
+
+Fixing it turned up a runtime gap: the executor assumed every list source was a
+slice, so a `*[]T` reached it as a pointer and it panicked taking the length of
+one. A nil pointer to a list is now null and a non-nil one is the list it points
+at — which is what the nullability table in D26 promised all along, and what
+nothing had yet returned.
