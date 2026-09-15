@@ -29,13 +29,60 @@ import (
 //
 // Fields declared on it are the interface's contract; every member must provide
 // each of them, which is checked when the schema is built.
-func Interface[I any](b *Builder) *Type[I] {
+func Interface[I any](b *Builder) *AbstractType[I] {
 	goType := reflect.TypeFor[I]()
 	if goType.Kind() != reflect.Interface {
 		b.errorf("lightning.Interface: %s is not a Go interface; a GraphQL interface is backed by one", typeName(goType))
-		return &Type[I]{b: b, decl: &typeDecl{name: typeName(goType), goType: goType}}
+		return &AbstractType[I]{b: b, decl: &typeDecl{name: typeName(goType), goType: goType}}
 	}
-	return &Type[I]{b: b, decl: b.declare(goType, kindInterface)}
+	return &AbstractType[I]{b: b, decl: b.declare(goType, kindInterface)}
+}
+
+// AbstractType is a handle on a declared interface or union.
+//
+// It is distinct from Type because the parent a resolver receives differs: an
+// object's resolver takes a *T, an interface's takes the interface value, since
+// that is what the caller has.
+type AbstractType[I any] struct {
+	b    *Builder
+	decl *typeDecl
+}
+
+// Describe sets the type's description.
+func (a *AbstractType[I]) Describe(description string) *AbstractType[I] {
+	a.decl.description = description
+	return a
+}
+
+// Name overrides the GraphQL name of the type.
+func (a *AbstractType[I]) Name(name string) *AbstractType[I] {
+	a.decl.name = name
+	return a
+}
+
+// GraphQLName returns the name this type has in the schema.
+func (a *AbstractType[I]) GraphQLName() string { return a.decl.name }
+
+// Field declares a field of the interface's contract.
+//
+// Every member must provide a field of this name and type, which is checked
+// when the schema is built.
+func (a *AbstractType[I]) Field[R any](name string, resolve func(ctx ctxAlias, parent I) (R, error)) *Field {
+	decl := &fieldDecl{
+		name:     name,
+		goResult: reflect.TypeFor[R](),
+		source:   callSite(),
+		meta:     map[string]any{},
+		resolve: func(ctx ctxAlias, source, _ any, _ *graphql.SelectionSet) (any, error) {
+			parent, ok := source.(I)
+			if !ok {
+				return nil, nil
+			}
+			return resolve(ctx, parent)
+		},
+	}
+	a.decl.fields = append(a.decl.fields, decl)
+	return &Field{b: a.b, parent: a.decl, decl: decl}
 }
 
 // Union declares the Go interface I as a GraphQL union type.
@@ -43,13 +90,13 @@ func Interface[I any](b *Builder) *Type[I] {
 // A union differs from an interface in having no fields of its own: a client
 // reaches its members through fragments. The Go interface behind it usually has
 // no methods.
-func Union[I any](b *Builder) *Type[I] {
+func Union[I any](b *Builder) *AbstractType[I] {
 	goType := reflect.TypeFor[I]()
 	if goType.Kind() != reflect.Interface {
 		b.errorf("lightning.Union: %s is not a Go interface; a GraphQL union is backed by one", typeName(goType))
-		return &Type[I]{b: b, decl: &typeDecl{name: typeName(goType), goType: goType}}
+		return &AbstractType[I]{b: b, decl: &typeDecl{name: typeName(goType), goType: goType}}
 	}
-	return &Type[I]{b: b, decl: b.declare(goType, kindUnion)}
+	return &AbstractType[I]{b: b, decl: b.declare(goType, kindUnion)}
 }
 
 // Implements registers that the object type T belongs to the abstract type I.
@@ -62,7 +109,7 @@ func Union[I any](b *Builder) *Type[I] {
 // Membership is explicit rather than inferred from which Go types happen to
 // satisfy the interface. Satisfying an interface by accident is ordinary Go;
 // joining a GraphQL interface by accident is not.
-func Implements[I, T any](abstract *Type[I], object *Type[T], witness func(*T) I) {
+func Implements[I, T any](abstract *AbstractType[I], object *Type[T], witness func(*T) I) {
 	if abstract.b != object.b {
 		abstract.b.errorf("lightning.Implements: %s and %s come from different builders", abstract.decl.name, object.decl.name)
 		return
@@ -246,11 +293,15 @@ func (b *Builder) wireAbstractTypes() error {
 					want := abstract.Fields[name]
 					have, ok := object.Fields[name]
 					if !ok {
-						b.errorf("%s implements %s but has no field %s", object.Name, decl.name, name)
+						// The member inherits the interface's field. Declaring
+						// it once, on the interface, is the point of declaring
+						// it there: the resolver takes the interface value, and
+						// every member satisfies it.
+						object.Fields[name] = want
 						continue
 					}
 					if have.Type.String() != want.Type.String() {
-						b.errorf("%s.%s is %s, but %s declares it as %s", object.Name, name, have.Type, decl.name, want.Type)
+						b.errorf("%s.%s is %s, but the interface %s declares it as %s", object.Name, name, have.Type, decl.name, want.Type)
 					}
 				}
 
